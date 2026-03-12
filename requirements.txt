@@ -6,4 +6,5 @@ pydantic-settings
 psycopg2-binary
 alembic
 pytest
-httpx
+httpxfastapi
+-1 pydantic
