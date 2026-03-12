@@ -1,7 +1,8 @@
 import uuid
-from typing import Any
+import enum
+from typing import Any, Optional
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, JSON
+from sqlalchemy import String, Text, DateTime, JSON, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 from src.database import Base
 
@@ -29,4 +30,40 @@ class Job(Base):
     company: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text)
     extracted_requirements: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
+
+class ApplicationStatus(str, enum.Enum):
+    Drafted = "Drafted"
+    Approved = "Approved"
+    Sent = "Sent"
+    Interviewing = "Interviewing"
+    Rejected = "Rejected"
+
+class Resume(Base):
+    __tablename__ = "resumes"
+    
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    file_path: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
+
+class Application(Base):
+    __tablename__ = "applications"
+    
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    job_id: Mapped[str] = mapped_column(String, ForeignKey("jobs.id"))
+    status: Mapped[ApplicationStatus] = mapped_column(Enum(ApplicationStatus), default=ApplicationStatus.Drafted)
+    ai_match_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cover_letter_file_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now)
+
+class InterviewPrep(Base):
+    __tablename__ = "interview_prep"
+    
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    job_id: Mapped[str] = mapped_column(String, ForeignKey("jobs.id"))
+    content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
