@@ -53,9 +53,11 @@ mypy src/
 *   **Dependency Injection:** Extensively use FastAPI's `Depends` for database sessions, configuration, and external services to ensure testability.
 *   **Synchronous First:** Do not use `asyncio` for standard I/O bound tasks initially unless required by the framework (FastAPI) or library (Crawl4AI). Avoid task queues (Celery/Redis) until MVP validation.
 
-## 3. Database Schema
+## 3. Database Schema & Storage
 
 The database relies on PostgreSQL and SQLAlchemy 2.0.
+**Multi-Tenancy (SaaS Readiness):** Every user-specific table (Resumes, Applications, Interview_Prep) MUST include a `user_id` as a Foreign Key linking back to the Users table.
+**Stateless File Storage:** Resumes and generated Cover Letters must be saved locally (e.g., `uploads/`). The DB must only store relative file paths (strings). This Adapter Pattern ensures seamless future migration to AWS S3/Supabase.
 
 ### Users
 *   `id`: UUID (Primary Key)
@@ -63,6 +65,12 @@ The database relies on PostgreSQL and SQLAlchemy 2.0.
 *   `hashed_password`: String
 *   `created_at`: DateTime (UTC)
 *   `zusatz_infos`: JSONB (For future B2B extensions, skills, preferences)
+
+### Resumes
+*   `id`: UUID (Primary Key)
+*   `user_id`: UUID (Foreign Key -> Users.id)
+*   `file_path`: String (Relative path, e.g., 'uploads/resumes/uuid.pdf')
+*   `created_at`: DateTime (UTC)
 
 ### Jobs
 *   `id`: UUID (Primary Key)
@@ -79,15 +87,23 @@ The database relies on PostgreSQL and SQLAlchemy 2.0.
 *   `job_id`: UUID (Foreign Key -> Jobs.id)
 *   `status`: Enum (`Drafted`, `Approved`, `Sent`, `Interviewing`, `Rejected`)
 *   `ai_match_rationale`: Text (EU AI Act logging - why this user matches this job)
-*   `cover_letter_draft`: Text
+*   `cover_letter_file_path`: String (Relative path, e.g., 'uploads/cover_letters/uuid.pdf')
 *   `created_at`: DateTime (UTC)
 *   `updated_at`: DateTime (UTC)
 
+### Interview_Prep
+*   `id`: UUID (Primary Key)
+*   `user_id`: UUID (Foreign Key -> Users.id)
+*   `job_id`: UUID (Foreign Key -> Jobs.id)
+*   `content`: Text
+*   `created_at`: DateTime (UTC)
+
 ## 4. API Architecture & Core Features
 
-*   **`POST /api/v1/resumes/upload`**: Uploads a PDF/Docx. Triggers the synchronous PII stripping pipeline before storing/processing.
-*   **`POST /api/v1/applications/draft`**: Generates a cover letter draft for a specific job and user profile.
-*   **`GET /api/v1/applications/{app_id}/draft`**: Fetches the AI-drafted cover letter for human review.
+*   **`POST /api/v1/resumes/upload`**: Uploads a PDF/Docx to local storage (S3-ready). Triggers the synchronous PII stripping pipeline before processing.
+*   **`GET /api/v1/jobs/discover`**: **Agentic Research Module.** Takes a user query (e.g., "10 biggest finance companies in Frankfurt"), uses a Web Search API (Tavily/Brave), and feeds results to an LLM. The LLM extracts company names and career URLs, outputting a JSON array for the Scraper.
+*   **`POST /api/v1/applications/draft`**: Generates a cover letter draft for a specific job and user profile, saved to local storage.
+*   **`GET /api/v1/applications/{app_id}/draft`**: Fetches the AI-drafted cover letter file path for human review.
 *   **`POST /api/v1/applications/{app_id}/approve`**: Human-in-the-loop trigger. Changes status to 'Approved' and queues for sending (synchronously in MVP).
 *   **`GET /api/v1/applications/{app_id}/interview-prep`**: Generates a custom interview cheat sheet based on the job description and user's (stripped) profile.
 
@@ -96,7 +112,7 @@ The database relies on PostgreSQL and SQLAlchemy 2.0.
 This pipeline operates synchronously in the MVP phase.
 
 **Step 1: ATS Pattern Matching (Fast Path)**
-1.  Receive Target URL.
+1.  Receive Target URL (often provided by the Agentic Discovery Module).
 2.  Regex/String match URL against known footprints (`personio.de`, `workday.com`, `index.php?ac=jobad`).
 3.  If matched, route to specific fast-path parser using `httpx`.
 4.  Extract JSON/API payload.
@@ -110,21 +126,23 @@ This pipeline operates synchronously in the MVP phase.
 
 ## 6. Phased Execution Plan (Component-Driven)
 
-### Phase 1: DB & FastAPI Setup
-*   **Goal:** Scaffolding, DB connection, and basic health check.
-*   **Output:** Working FastAPI server with SQLAlchemy models for User, Job, Application and alembic migrations.
+### Phase 1: Core Engine Proof of Concept (PoC)
+*   **Goal:** Prove the Agentic Discovery and Hybrid Extraction work before building the app.
+*   **Output:** A single, synchronous Python script that tests:
+    1.  Agentic Discovery (Search API + LLM -> JSON Array of URLs).
+    2.  Hybrid Extraction Engine (ATS Fast Path check + Crawl4AI fallback -> Pydantic `JobSchema`).
 
-### Phase 2: Hybrid Extraction Engine
-*   **Goal:** Build the synchronous URL scraping logic.
-*   **Output:** A standalone Python service class `JobExtractor` that implements Step 1 (Requests) and Step 2 (Crawl4AI) returning a validated Pydantic model.
+### Phase 2: DB, Storage & FastAPI Scaffolding
+*   **Goal:** Scaffolding, DB connection (Multi-Tenant), stateless file storage setup, and basic health check.
+*   **Output:** Working FastAPI server with SQLAlchemy models, alembic migrations, and the local `uploads/` directory structure.
 
 ### Phase 3: Resume Processing & Privacy
 *   **Goal:** PII stripping and basic resume parsing.
 *   **Output:** A service that takes text/PDF, uses NLP/LLM to identify Name/Email/Phone, replaces them with placeholders (`[REDACTED]`), and returns the sanitized profile.
 
 ### Phase 4: API Endpoint Integration
-*   **Goal:** Wire the domain logic to the REST endpoints.
-*   **Output:** Functional endpoints for upload, draft generation, review, approval, and interview prep. E2E tests passing using SQLite/Test DB.
+*   **Goal:** Wire the domain logic (Discovery, Extraction, Generation) to the REST endpoints.
+*   **Output:** Functional endpoints for upload, discovery, draft generation, review, approval, and interview prep. E2E tests passing using SQLite/Test DB.
 
 ### Phase 5: Production Readiness & Scaling Strategy
 *   **Goal:** Finalize MVP and plan for async.
