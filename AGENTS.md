@@ -51,6 +51,7 @@ mypy src/
     *   Constants: `UPPER_SNAKE_CASE`
 *   **Error Handling:** Use FastAPI's `HTTPException` for API boundaries. Custom exception classes for domain logic. Never catch generic `Exception` without re-raising or logging extensively.
 *   **Dependency Injection:** Extensively use FastAPI's `Depends` for database sessions, configuration, and external services to ensure testability.
+*   **Security Dependencies:** All protected endpoints MUST use `Depends(verify_jwt)` and `Depends(check_rate_limit)`.
 *   **Synchronous First:** Do not use `asyncio` for standard I/O bound tasks initially unless required by the framework (FastAPI) or library (Crawl4AI). Avoid task queues (Celery/Redis) until MVP validation.
 
 ## 3. Database Schema & Storage
@@ -65,6 +66,12 @@ The database relies on PostgreSQL and SQLAlchemy 2.0.
 *   `hashed_password`: String
 *   `created_at`: DateTime (UTC)
 *   `zusatz_infos`: JSONB (For future B2B extensions, skills, preferences)
+*   `subscription_tier`: String (Default: 'free')
+*   `payment_customer_id`: String (Nullable, for Stripe/payment provider)
+*   `credits_used`: Integer (Default: 0)
+*   `credits_limit`: Integer (Default: 10)
+*   `last_reset_date`: DateTime (UTC)
+*   `is_superuser`: Boolean (Default: False)
 
 ### Resumes
 *   `id`: UUID (Primary Key)
@@ -100,12 +107,19 @@ The database relies on PostgreSQL and SQLAlchemy 2.0.
 
 ## 4. API Architecture & Core Features
 
-*   **`POST /api/v1/resumes/upload`**: Uploads a PDF/Docx to local storage (S3-ready). Triggers the synchronous PII stripping pipeline before processing.
-*   **`GET /api/v1/jobs/discover`**: **Agentic Research Module.** Takes a user query (e.g., "10 biggest finance companies in Frankfurt"), uses a Web Search API (Tavily/Brave), and feeds results to an LLM. The LLM extracts company names and career URLs, outputting a JSON array for the Scraper.
-*   **`POST /api/v1/applications/draft`**: Generates a cover letter draft for a specific job and user profile, saved to local storage.
-*   **`GET /api/v1/applications/{app_id}/draft`**: Fetches the AI-drafted cover letter file path for human review.
-*   **`POST /api/v1/applications/{app_id}/approve`**: Human-in-the-loop trigger. Changes status to 'Approved' and queues for sending (synchronously in MVP).
-*   **`GET /api/v1/applications/{app_id}/interview-prep`**: Generates a custom interview cheat sheet based on the job description and user's (stripped) profile.
+*   **Modular Routing:** Use `APIRouter` for all endpoints. Organize by domain (resumes, jobs, applications).
+*   **Security:** All protected endpoints require `Depends(verify_jwt)` and `Depends(check_rate_limit)`.
+*   **Quota Management:** `check_rate_limit` compares `credits_used` vs `credits_limit`. **Bypass if `user.is_superuser` is `True`.**
+*   **LLM Resilience:** Use LiteLLM for fallback routing across multiple API keys/providers.
+*   **GDPR Compliance:** All user-provided data (resumes, job queries) must pass through `PIIStrippingService` before LLM calls.
+
+### Endpoints
+*   **`POST /api/v1/resumes/upload`**: Uploads a PDF/Docx, triggers PII stripping, saves to local storage.
+*   **`GET /api/v1/jobs/discover`**: **Agentic Research Module.** Takes user query, uses Web Search API + LLM to extract company names and career URLs.
+*   **`POST /api/v1/applications/draft`**: Generates cover letter draft for specific job and user profile.
+*   **`GET /api/v1/applications/{app_id}/draft`**: Fetches AI-drafted cover letter file path for review.
+*   **`POST /api/v1/applications/{app_id}/approve`**: Human-in-the-loop trigger. Changes status to 'Approved'.
+*   **`GET /api/v1/applications/{app_id}/interview-prep`**: Generates interview cheat sheet based on job and user profile.
 
 ## 5. Hybrid Extraction Pipeline
 
@@ -121,29 +135,27 @@ This pipeline operates synchronously in the MVP phase.
 **Step 2: Dynamic AI Fallback (Slow Path)**
 1.  If URL is unknown, initialize `Crawl4AI` (synchronously awaited if async is forced by library).
 2.  Navigate and extract raw HTML/Markdown text.
-3.  Pass raw text to LLM structured output endpoint (e.g., OpenAI/Anthropic with function calling) asking for `JobSchema`.
+3.  Pass raw text to LLM structured output endpoint (via LiteLLM with fallback) asking for `JobSchema`.
 4.  Validate resulting JSON against Pydantic `JobSchema`.
 
 ## 6. Phased Execution Plan (Component-Driven)
 
-### Phase 1: Core Engine Proof of Concept (PoC)
+### Phase 1: Core Engine Proof of Concept (PoC) - COMPLETE
 *   **Goal:** Prove the Agentic Discovery and Hybrid Extraction work before building the app.
-*   **Output:** A single, synchronous Python script that tests:
-    1.  Agentic Discovery (Search API + LLM -> JSON Array of URLs).
-    2.  Hybrid Extraction Engine (ATS Fast Path check + Crawl4AI fallback -> Pydantic `JobSchema`).
+*   **Output:** `poc_core_engine.py` - working script with DuckDuckGo + Z.ai LLM discovery + Crawl4AI extraction.
 
-### Phase 2: DB, Storage & FastAPI Scaffolding
-*   **Goal:** Scaffolding, DB connection (Multi-Tenant), stateless file storage setup, and basic health check.
-*   **Output:** Working FastAPI server with SQLAlchemy models, alembic migrations, and the local `uploads/` directory structure.
+### Phase 2: DB, Storage & FastAPI Scaffolding - COMPLETE
+*   **Goal:** Scaffolding, DB connection (Multi-Tenant), stateless file storage setup, health check.
+*   **Output:** Working FastAPI server with SQLAlchemy models, alembic migrations, `uploads/` directory structure.
 
 ### Phase 3: Resume Processing & Privacy
 *   **Goal:** PII stripping and basic resume parsing.
-*   **Output:** A service that takes text/PDF, uses NLP/LLM to identify Name/Email/Phone, replaces them with placeholders (`[REDACTED]`), and returns the sanitized profile.
+*   **Output:** `PIIStrippingService` that takes text/PDF, uses NLP/LLM to identify Name/Email/Phone, replaces with `[REDACTED]`.
 
 ### Phase 4: API Endpoint Integration
-*   **Goal:** Wire the domain logic (Discovery, Extraction, Generation) to the REST endpoints.
-*   **Output:** Functional endpoints for upload, discovery, draft generation, review, approval, and interview prep. E2E tests passing using SQLite/Test DB.
+*   **Goal:** Wire domain logic to REST endpoints with JWT auth and rate limiting.
+*   **Output:** Functional endpoints with `verify_jwt` and `check_rate_limit` dependencies. E2E tests passing.
 
 ### Phase 5: Production Readiness & Scaling Strategy
 *   **Goal:** Finalize MVP and plan for async.
-*   **Output:** Logging setup (EU AI Act compliance), Dockerfile, and a technical design document for moving to Celery/Redis in v2.
+*   **Output:** Logging setup (EU AI Act compliance), Dockerfile, technical design for Celery/Redis in v2.

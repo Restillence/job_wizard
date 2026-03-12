@@ -68,7 +68,9 @@ def discover_companies(query: str) -> List[Company]:
     search_context = json.dumps(search_results, indent=2)
 
     # 2. Feed context to LLM for extraction
-    print(f"    -> Asking LLM (Z.ai GLM-5) to extract top 2 companies and career URLs...")
+    print(
+        "    -> Asking LLM (Z.ai GLM-5) to extract top 2 companies and career URLs..."
+    )
     prompt = f"""
     You are an expert HR researcher. Based on the following search results, extract the top 2 software companies located in Frankfurt and their official career/jobs page URLs.
     
@@ -127,7 +129,9 @@ async def crawl4ai_fallback(url: str) -> ScrapedJobs:
         if len(markdown_content) > 15000:
             markdown_content = markdown_content[:15000]
 
-        print(f"    -> Crawl complete. Passing {len(markdown_content)} chars to LLM for parsing...")
+        print(
+            f"    -> Crawl complete. Passing {len(markdown_content)} chars to LLM for parsing..."
+        )
 
         prompt = f"""
         Extract job titles and their application URLs from the following markdown text scraped from a career page.
@@ -163,9 +167,13 @@ def hybrid_scrape(url: str) -> None:
 
     if check_ats_footprint(url):
         print("    [SUCCESS] Fast Path ATS footprint detected!")
-        print("    -> In production, we would use HTTPX to extract JSON/API payloads directly.")
+        print(
+            "    -> In production, we would use HTTPX to extract JSON/API payloads directly."
+        )
     else:
-        print("    [SLOW PATH] No known ATS found. Deploying Crawl4AI dynamic fallback...")
+        print(
+            "    [SLOW PATH] No known ATS found. Deploying Crawl4AI dynamic fallback..."
+        )
         # Await the async Crawl4AI process in our synchronous flow
         scraped_data = asyncio.run(crawl4ai_fallback(url))
 

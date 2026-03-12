@@ -8,7 +8,7 @@ try:
         model="glm-4-flash",
         api_base="https://open.bigmodel.cn/api/paas/v4/",
         custom_llm_provider="openai",
-        messages=[{"role": "user", "content": "hello"}]
+        messages=[{"role": "user", "content": "hello"}],
     )
     print("SUCCESS: ", response.choices[0].message.content)
 except Exception as e:
