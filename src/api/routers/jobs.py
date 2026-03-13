@@ -16,15 +16,33 @@ class DiscoverQuery(BaseModel):
             "The search query for job discovery. "
             "TIP: Avoid generic searches like 'data science frankfurt'. "
             "Instead, use search operators or target specific niches to bypass job boards like LinkedIn."
-        ),
-        json_schema_extra={
+        )
+    )
+    
+    model_config = {
+        "json_schema_extra": {
             "examples": [
-                {"query": "Data Science jobs Frankfurt site:careers.*.com"},
-                {"query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"},
-                {"query": "top AI startups hiring in Berlin 2026"}
+                {
+                    "summary": "Example 1: Search Operators",
+                    "value": {
+                        "query": "Data Science jobs Frankfurt site:careers.*.com"
+                    }
+                },
+                {
+                    "summary": "Example 2: Exclude Job Boards",
+                    "value": {
+                        "query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"
+                    }
+                },
+                {
+                    "summary": "Example 3: Targeted Niches",
+                    "value": {
+                        "query": "top AI startups hiring in Berlin 2026"
+                    }
+                }
             ]
         }
-    )
+    }
 
 class DiscoverResponse(BaseModel):
     message: str
