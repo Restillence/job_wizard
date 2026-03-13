@@ -10,3 +10,4 @@ httpx
 litellm
 duckduckgo-search
 crawl4ai
+python-multipart
