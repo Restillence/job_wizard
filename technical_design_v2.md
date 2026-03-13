@@ -40,3 +40,11 @@ All files (Resumes, Cover Letters) MUST be uploaded directly to AWS S3 (or a com
 3.  Create `src/worker.py` to define the Celery app instance.
 4.  Move functions from `src/services/` into Celery `@task` decorators.
 5.  Migrate local `os.path` file management to `boto3` for S3 integration.
+
+## Frontend UX Notes (Job Discovery)
+*When building the B2C frontend, the Job Discovery search bar needs specific UX handling to ensure high-quality LLM extraction:*
+
+1. **Placeholder Text:** Use proactive placeholders like `e.g., top AI startups hiring in Berlin 2026`.
+2. **Helper Tooltips/Chips:** Provide a 💡 tooltip or clickable suggestion chips under the search bar that teach users to bypass job boards. 
+   * Example chips: `site:careers.*.com`, `-linkedin -stepstone`, `intitle:careers`.
+3. **Empty States:** If the LLM returns an empty array `[]` (because the search snippets lacked explicit company names), the UI should clearly tell the user: *"We couldn't extract specific companies from these results. Try adding 'careers page' or excluding job boards like '-linkedin'."*

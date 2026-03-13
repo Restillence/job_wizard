@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 from src.database import get_db
 from sqlalchemy.orm import Session
@@ -10,7 +10,21 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 discovery_service = JobDiscoveryService()
 
 class DiscoverQuery(BaseModel):
-    query: str
+    query: str = Field(
+        ..., 
+        description=(
+            "The search query for job discovery. "
+            "TIP: Avoid generic searches like 'data science frankfurt'. "
+            "Instead, use search operators or target specific niches to bypass job boards like LinkedIn."
+        ),
+        json_schema_extra={
+            "examples": [
+                {"query": "Data Science jobs Frankfurt site:careers.*.com"},
+                {"query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"},
+                {"query": "top AI startups hiring in Berlin 2026"}
+            ]
+        }
+    )
 
 class DiscoverResponse(BaseModel):
     message: str
