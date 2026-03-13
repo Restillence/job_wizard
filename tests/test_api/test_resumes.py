@@ -1,11 +1,6 @@
-import pytest
-from fastapi.testclient import TestClient
-from src.main import app
 import os
 
-client = TestClient(app)
-
-def test_upload_resume():
+def test_upload_resume(client):
     # Create a dummy file
     with open("test_resume.txt", "w") as f:
         f.write("Hello my name is John and my email is john@test.com")

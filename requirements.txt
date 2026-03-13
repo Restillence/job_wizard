@@ -8,3 +8,5 @@ alembic
 pytest
 httpx
 litellm
+duckduckgo-search
+crawl4ai
