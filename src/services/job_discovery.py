@@ -16,12 +16,24 @@ class DiscoveryResult(BaseModel):
 class JobDiscoveryService:
     def discover_companies(self, query: str) -> List[Company]:
         # 1. Use DuckDuckGo Search (Free, no API key needed)
-        search_results = DDGS().text(query, max_results=5)
+        try:
+            search_results = DDGS().text(query, max_results=10)
+        except Exception as e:
+            print(f"DuckDuckGo search error: {e}")
+            search_results = []
+            
+        if not search_results:
+            # Prevent LLM hallucination if search fails or returns nothing
+            return []
+
         search_context = json.dumps(search_results, indent=2)
 
         # 2. Feed context to LLM for extraction
         prompt = f"""
-        You are an expert HR researcher. Based on the following search results, extract the top 2 software companies and their official career/jobs page URLs.
+        You are an expert HR researcher. Based STRICTLY on the following search results, extract the software companies mentioned and their official career/jobs page URLs. 
+        
+        If no specific companies are mentioned in the search results, return an empty array [].
+        DO NOT invent, guess, or hallucinate companies like Google or Microsoft unless they explicitly appear in the text below.
         
         Search Results:
         {search_context}
