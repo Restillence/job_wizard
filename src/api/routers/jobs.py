@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import List
 from src.database import get_db
@@ -21,26 +21,9 @@ class DiscoverQuery(BaseModel):
     
     model_config = {
         "json_schema_extra": {
-            "examples": [
-                {
-                    "summary": "Example 1: Search Operators",
-                    "value": {
-                        "query": "Data Science jobs Frankfurt site:careers.*.com"
-                    }
-                },
-                {
-                    "summary": "Example 2: Exclude Job Boards",
-                    "value": {
-                        "query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"
-                    }
-                },
-                {
-                    "summary": "Example 3: Targeted Niches",
-                    "value": {
-                        "query": "top AI startups hiring in Berlin 2026"
-                    }
-                }
-            ]
+            "example": {
+                "query": "Data Science jobs Frankfurt site:careers.*.com"
+            }
         }
     }
 
@@ -51,7 +34,23 @@ class DiscoverResponse(BaseModel):
 
 @router.post("/discover", response_model=DiscoverResponse)
 async def discover_jobs(
-    query: DiscoverQuery,
+    query: DiscoverQuery = Body(
+        ...,
+        openapi_examples={
+            "Example 1 (Operators)": {
+                "summary": "Using search operators",
+                "value": {"query": "Data Science jobs Frankfurt site:careers.*.com"}
+            },
+            "Example 2 (Exclude Job Boards)": {
+                "summary": "Excluding LinkedIn and StepStone",
+                "value": {"query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"}
+            },
+            "Example 3 (Targeted Niches)": {
+                "summary": "Specific AI Startups",
+                "value": {"query": "top AI startups hiring in Berlin 2026"}
+            }
+        }
+    ),
     db: Session = Depends(get_db),
     user_info: dict = Depends(verify_jwt),
     _rate_limit: bool = Depends(check_rate_limit)
