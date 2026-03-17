@@ -1,161 +1,487 @@
 # JobWiz Architecture & Execution Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For AI Assistant:** REQUIRED: Use `superpowers:executing-plans` to implement this plan task-by-task.
 
 **Goal:** Build a robust, scalable, GDPR-compliant MVP for an AI-powered B2C Job Application Assistant.
 
 **Architecture:** API-first, Synchronous-First/Scale-Later methodology.
 
-**Tech Stack:** Python 3.12+ (in `jobwiz_env` conda env), FastAPI, SQLAlchemy 2.0, Pydantic 2.0, PostgreSQL, HTTPX, Crawl4AI, Pytest.
+**Tech Stack:** Python 3.12+ (in `jobwiz_env` conda env), FastAPI, SQLAlchemy 2.0, Pydantic 2.0, PostgreSQL (with pg_trgm extension), HTTPX, Crawl4AI, OpenAI Embeddings, Pytest.
+
+---
 
 ## 1. Build/Lint/Test Commands
 
-**Environment Setup:**
 ```bash
 conda activate jobwiz_env
-```
 
-**Testing:**
-```bash
-# Run all tests
+# Testing
 pytest tests/
-
-# Run a single test file
 pytest tests/test_api/test_applications.py -v
-
-# Run a specific test function
-pytest tests/test_api/test_applications.py::test_create_application_draft -v
-
-# Run with coverage
 pytest --cov=src tests/
-```
 
-**Linting & Formatting:**
-```bash
-# We use ruff for both linting and formatting (fastest 2026 standard)
+# Linting & Formatting
 ruff check .
 ruff format .
 
 # Type checking
 mypy src/
+
+# Database reset (after schema changes)
+python -c "from src.database import engine; from src.models import Base; Base.metadata.drop_all(bind=engine); Base.metadata.create_all(bind=engine)" && python init_db.py
 ```
+
+---
 
 ## 2. Code Style & Guidelines
 
-*   **Imports:** Grouped (Standard library, Third-party, Local). Managed by `ruff`.
-*   **Formatting:** `ruff format` defaults (line length 88 or 100).
-*   **Typing:** Strict type hinting required everywhere. Use `mypy` for validation.
-*   **Naming Conventions:**
-    *   Variables/Functions: `snake_case`
-    *   Classes: `PascalCase`
-    *   Constants: `UPPER_SNAKE_CASE`
-*   **Error Handling:** Use FastAPI's `HTTPException` for API boundaries. Custom exception classes for domain logic. Never catch generic `Exception` without re-raising or logging extensively.
-*   **Dependency Injection:** Extensively use FastAPI's `Depends` for database sessions, configuration, and external services to ensure testability.
-*   **Security Dependencies:** All protected endpoints MUST use `Depends(verify_jwt)` and `Depends(check_rate_limit)`.
-*   **Synchronous First:** Do not use `asyncio` for standard I/O bound tasks initially unless required by the framework (FastAPI) or library (Crawl4AI). Avoid task queues (Celery/Redis) until MVP validation.
+* **Imports:** Grouped (Standard library, Third-party, Local). Managed by `ruff`.
+* **Formatting:** `ruff format` defaults (line length 88).
+* **Typing:** Strict type hinting required. Use `mypy` for validation.
+* **Naming:** `snake_case` (variables/functions), `PascalCase` (classes), `UPPER_SNAKE_CASE` (constants).
+* **Error Handling:** Use `HTTPException` for API boundaries. Custom exceptions for domain logic.
+* **Dependency Injection:** Use `Depends` for DB sessions, config, and external services.
+* **Security:** All protected endpoints MUST use `Depends(verify_jwt)` and `Depends(check_rate_limit)`.
+* **Synchronous First:** No `asyncio` unless required by framework/library. No Celery/Redis until MVP validation.
 
-## 3. Database Schema & Storage
+---
 
-The database relies on PostgreSQL and SQLAlchemy 2.0.
-**Multi-Tenancy (SaaS Readiness):** Every user-specific table (Resumes, Applications, Interview_Prep) MUST include a `user_id` as a Foreign Key linking back to the Users table.
-**Stateless File Storage:** Resumes and generated Cover Letters must be saved locally (e.g., `uploads/`). The DB must only store relative file paths (strings). This Adapter Pattern ensures seamless future migration to AWS S3/Supabase.
+## 3. Database Schema
+
+PostgreSQL with SQLAlchemy 2.0. **Enable pg_trgm extension for fuzzy search.**
+
+### CompanySize (Enum)
+* `startup`
+* `hidden_champion`
+* `enterprise`
 
 ### Users
-*   `id`: UUID (Primary Key)
-*   `email`: String (Unique, Indexed)
-*   `hashed_password`: String
-*   `created_at`: DateTime (UTC)
-*   `zusatz_infos`: JSONB (For future B2B extensions, skills, preferences)
-*   `subscription_tier`: String (Default: 'free')
-*   `payment_customer_id`: String (Nullable, for Stripe/payment provider)
-*   `credits_used`: Integer (Default: 0)
-*   `credits_limit`: Integer (Default: 10)
-*   `last_reset_date`: DateTime (UTC)
-*   `is_superuser`: Boolean (Default: False)
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `email` | String | Unique, Indexed |
+| `hashed_password` | String | |
+| `created_at` | DateTime (UTC) | |
+| `zusatz_infos` | JSONB | **Critical**: Stores manually added skills/interests for vector matching |
+| `subscription_tier` | String | Default: 'free' |
+| `payment_customer_id` | String | Nullable, for Stripe |
+| `credits_used` | Integer | Default: 0 |
+| `credits_limit` | Integer | Default: 10 |
+| `last_reset_date` | DateTime (UTC) | |
+| `is_superuser` | Boolean | Default: False |
 
-### Resumes
-*   `id`: UUID (Primary Key)
-*   `user_id`: UUID (Foreign Key -> Users.id)
-*   `file_path`: String (Relative path, e.g., 'uploads/resumes/uuid.pdf')
-*   `created_at`: DateTime (UTC)
+### Companies
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `name` | String | Indexed |
+| `city` | String | Nullable |
+| `industry` | String | Nullable |
+| `company_size` | Enum | `startup`, `hidden_champion`, `enterprise` |
+| `url` | String | Career page URL, Unique |
+| `created_at` | DateTime (UTC) | |
 
 ### Jobs
-*   `id`: UUID (Primary Key)
-*   `source_url`: String (Unique)
-*   `title`: String
-*   `company`: String
-*   `description`: Text
-*   `extracted_requirements`: JSONB (Parsed via AI/Scraper)
-*   `created_at`: DateTime (UTC)
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `company_id` | UUID | FK → Companies.id |
+| `source_url` | String | Unique, Indexed |
+| `title` | String | |
+| `description` | Text | |
+| `extracted_requirements` | JSONB | Parsed via AI/Scraper |
+| `embedding` | JSON | OpenAI text-embedding-3-small (1536 floats, stored as JSON) |
+| `is_active` | Boolean | Default: True (soft-delete for removed jobs) |
+| `first_seen_at` | DateTime (UTC) | When first discovered |
+| `last_seen_at` | DateTime (UTC) | Last confirmed active |
+| `created_at` | DateTime (UTC) | |
+
+### Resumes
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `user_id` | UUID | FK → Users.id |
+| `file_path` | String | Relative path |
+| `embedding` | JSON | Pre-computed user profile embedding (1536 floats) |
+| `created_at` | DateTime (UTC) | |
 
 ### Applications
-*   `id`: UUID (Primary Key)
-*   `user_id`: UUID (Foreign Key -> Users.id)
-*   `job_id`: UUID (Foreign Key -> Jobs.id)
-*   `status`: Enum (`Drafted`, `Approved`, `Sent`, `Interviewing`, `Rejected`)
-*   `ai_match_rationale`: Text (EU AI Act logging - why this user matches this job)
-*   `cover_letter_file_path`: String (Relative path, e.g., 'uploads/cover_letters/uuid.pdf')
-*   `created_at`: DateTime (UTC)
-*   `updated_at`: DateTime (UTC)
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `user_id` | UUID | FK → Users.id |
+| `job_id` | UUID | FK → Jobs.id |
+| `status` | Enum | `Drafted`, `Approved`, `Sent`, `Rejected` |
+| `ai_match_rationale` | Text | EU AI Act logging |
+| `cover_letter_file_path` | String | Relative path, Nullable |
+| `similarity_score` | Float | Cosine similarity at match time |
+| `created_at` | DateTime (UTC) | |
+| `updated_at` | DateTime (UTC) | |
 
-### Interview_Prep
-*   `id`: UUID (Primary Key)
-*   `user_id`: UUID (Foreign Key -> Users.id)
-*   `job_id`: UUID (Foreign Key -> Jobs.id)
-*   `content`: Text
-*   `created_at`: DateTime (UTC)
+---
 
-## 4. API Architecture & Core Features
+## 4. API Endpoints
 
-*   **Modular Routing:** Use `APIRouter` for all endpoints. Organize by domain (resumes, jobs, applications).
-*   **Security:** All protected endpoints require `Depends(verify_jwt)` and `Depends(check_rate_limit)`.
-*   **Quota Management:** `check_rate_limit` compares `credits_used` vs `credits_limit`. **Bypass if `user.is_superuser` is `True`.**
-*   **LLM Resilience:** Use LiteLLM for fallback routing across multiple API keys/providers.
-*   **GDPR Compliance:** All user-provided data (resumes, job queries) must pass through `PIIStrippingService` before LLM calls.
+### Separate Endpoints (Granular Control)
 
-### Endpoints
-*   **`POST /api/v1/resumes/upload`**: Uploads a PDF/Docx, triggers PII stripping, saves to local storage.
-*   **`GET /api/v1/jobs/discover`**: **Agentic Research Module.** Takes user query, uses Web Search API + LLM to extract company names and career URLs.
-*   **`POST /api/v1/applications/draft`**: Generates cover letter draft for specific job and user profile.
-*   **`GET /api/v1/applications/{app_id}/draft`**: Fetches AI-drafted cover letter file path for review.
-*   **`POST /api/v1/applications/{app_id}/approve`**: Human-in-the-loop trigger. Changes status to 'Approved'.
-*   **`GET /api/v1/applications/{app_id}/interview-prep`**: Generates interview cheat sheet based on job and user profile.
+#### `POST /api/v1/companies/search`
+Search local companies with fuzzy matching. Triggers self-building logic if results below threshold.
 
-## 5. Hybrid Extraction Pipeline
+**Query Params (all Optional):**
+* `city`: Filter by city
+* `industry`: Filter by industry
+* `keywords`: Fuzzy search on company name
+* `company_size`: Filter by enum (`startup`, `hidden_champion`, `enterprise`)
 
-This pipeline operates synchronously in the MVP phase.
+**Logic:**
+1. Query local Companies table with pg_trgm fuzzy search
+2. Calculate dynamic threshold based on query specificity:
+   - Broad query (all params empty): `MIN_RESULTS_THRESHOLD = 50`
+   - Specific query (any filter provided): `MIN_RESULTS_THRESHOLD = 5`
+3. If count < threshold → trigger ONE-TIME search API fallback with exclusion prompting
+4. Save new companies to DB, return combined results
 
-**Step 1: ATS Pattern Matching (Fast Path)**
-1.  Receive Target URL (often provided by the Agentic Discovery Module).
-2.  Regex/String match URL against known footprints (`personio.de`, `workday.com`, `index.php?ac=jobad`).
-3.  If matched, route to specific fast-path parser using `httpx`.
-4.  Extract JSON/API payload.
-5.  Validate against Pydantic `JobSchema`.
+**Response:**
+```json
+{
+  "companies": [...],
+  "total_found": 15,
+  "newly_added": 3,
+  "source": "local" | "api_fallback"
+}
+```
 
-**Step 2: Dynamic AI Fallback (Slow Path)**
-1.  If URL is unknown, initialize `Crawl4AI` (synchronously awaited if async is forced by library).
-2.  Navigate and extract raw HTML/Markdown text.
-3.  Pass raw text to LLM structured output endpoint (via LiteLLM with fallback) asking for `JobSchema`.
-4.  Validate resulting JSON against Pydantic `JobSchema`.
+#### `POST /api/v1/jobs/extract`
+Extract jobs from specified company career pages.
 
-## 6. Phased Execution Plan (Component-Driven)
+**Body:**
+```json
+{
+  "company_ids": ["uuid1", "uuid2"]
+}
+```
 
-### Phase 1: Core Engine Proof of Concept (PoC) - COMPLETE
-*   **Goal:** Prove the Agentic Discovery and Hybrid Extraction work before building the app.
-*   **Output:** `poc_core_engine.py` - working script with DuckDuckGo + Z.ai LLM discovery + Crawl4AI extraction.
+**Logic:**
+1. For each company, run Hybrid Extraction Engine
+2. **Step A (ATS Fast Path):** Check URL against known footprints (Personio, Workday, Greenhouse). Extract via HTTPX JSON APIs.
+3. **Step B (Fallback):** Use Crawl4AI for custom sites.
+4. **Upsert Logic:**
+   - If job exists (by `source_url`): update `last_seen_at`, `is_active = True`
+   - If new: insert with `first_seen_at = now()`, generate embedding
+5. Return extracted jobs
 
-### Phase 2: DB, Storage & FastAPI Scaffolding - COMPLETE
-*   **Goal:** Scaffolding, DB connection (Multi-Tenant), stateless file storage setup, health check.
-*   **Output:** Working FastAPI server with SQLAlchemy models, alembic migrations, `uploads/` directory structure.
+**Response:**
+```json
+{
+  "jobs": [...],
+  "total_extracted": 47,
+  "newly_added": 12,
+  "updated": 35
+}
+```
 
-### Phase 3: Resume Processing & Privacy
-*   **Goal:** PII stripping and basic resume parsing.
-*   **Output:** `PIIStrippingService` that takes text/PDF, uses NLP/LLM to identify Name/Email/Phone, replaces with `[REDACTED]`.
+#### `POST /api/v1/jobs/match`
+Vector match user profile against jobs.
 
-### Phase 4: API Endpoint Integration
-*   **Goal:** Wire domain logic to REST endpoints with JWT auth and rate limiting.
-*   **Output:** Functional endpoints with `verify_jwt` and `check_rate_limit` dependencies. E2E tests passing.
+**Body:**
+```json
+{
+  "user_id": "uuid",
+  "company_ids": ["uuid1"],  // optional filter
+  "top_k": 20
+}
+```
 
-### Phase 5: Production Readiness & Scaling Strategy
-*   **Goal:** Finalize MVP and plan for async.
-*   **Output:** Logging setup (EU AI Act compliance), Dockerfile, technical design for Celery/Redis in v2.
+**Logic:**
+1. Get user's resume embedding (or generate from CV + zusatz_infos)
+2. Compute cosine similarity against job embeddings
+3. Return ranked job list with similarity scores
+4. **DO NOT generate cover letters yet** (JIT pattern)
+
+**Response:**
+```json
+{
+  "matched_jobs": [
+    {
+      "job_id": "uuid",
+      "title": "Senior Python Developer",
+      "company_name": "TechCorp",
+      "similarity_score": 0.87,
+      "is_new_match": true
+    }
+  ],
+  "total_matches": 15
+}
+```
+
+#### `POST /api/v1/applications/prepare`
+**JIT Trigger** - Only called when user clicks "Prepare Application".
+
+**Body:**
+```json
+{
+  "user_id": "uuid",
+  "job_id": "uuid"
+}
+```
+
+**Logic:**
+1. Strip PII from resume (GDPR)
+2. Dynamically tailor resume to job keywords
+3. Generate cover letter via LLM
+4. Log AI match rationale (EU AI Act)
+5. Save to Applications table with status `Drafted`
+6. Return draft for review
+
+**Response:**
+```json
+{
+  "application_id": "uuid",
+  "cover_letter_path": "uploads/cover_letters/uuid.txt",
+  "ai_match_rationale": "User matches 4/5 requirements...",
+  "status": "Drafted"
+}
+```
+
+#### `POST /api/v1/applications/{app_id}/approve`
+Human-in-the-loop approval. Changes status to `Approved`.
+
+#### `POST /api/v1/resumes/upload`
+Upload PDF/Docx, strip PII, generate embedding, save to local storage.
+
+### Combined Endpoint (Convenience)
+
+#### `POST /api/v1/pipeline/search-and-match`
+One-shot job discovery with matching.
+
+**Body:**
+```json
+{
+  "city": "Berlin",           // optional
+  "industry": "AI",           // optional
+  "keywords": ["python"],     // optional
+  "company_size": "startup",  // optional
+  "user_id": "uuid",
+  "top_k": 20
+}
+```
+
+**Internal Flow:**
+1. Call `/companies/search` logic
+2. Call `/jobs/extract` logic for found companies
+3. Call `/jobs/match` logic for user
+4. Return combined results
+
+**Response:**
+```json
+{
+  "companies_found": 15,
+  "companies_new": 3,
+  "jobs_extracted": 47,
+  "jobs_new": 12,
+  "matched_jobs": [
+    {
+      "job_id": "uuid",
+      "title": "Senior Python Developer",
+      "company_name": "TechCorp",
+      "similarity_score": 0.87
+    }
+  ]
+}
+```
+
+---
+
+## 5. Self-Building Discovery Logic
+
+```
+MIN_RESULTS_THRESHOLD:
+  - Broad query (no filters): 50 companies
+  - Specific query (any filter): 5 companies
+
+EXCLUSION PROMPTING:
+When calling search API (Tavily/Serper/Brave/DDG):
+  "Find 20 companies matching [query], but EXCLUDE companies:
+   [Company A, Company B, Company C, ...existing DB names...]"
+  
+  This guarantees continuous DB growth without duplicates.
+```
+
+---
+
+## 6. Hybrid Extraction Engine
+
+**ATS Fast Path (HTTPX):**
+| ATS | URL Pattern | Extraction Method |
+|-----|-------------|-------------------|
+| Personio | `personio.de` | Hidden JSON API |
+| Workday | `workday.com` | JSON endpoint |
+| Greenhouse | `greenhouse.io` | JSON API |
+
+**Fallback (Crawl4AI):**
+1. Navigate to career page
+2. Extract markdown
+3. Pass to LLM with `JobSchema` structured output
+4. Validate with Pydantic
+
+---
+
+## 7. Vector RAG Pipeline
+
+**Embedding Model:** `text-embedding-3-small` (1536 dimensions)
+
+**Pre-compute on:**
+* Resume upload → store on Resume.embedding
+* Job extraction → store on Job.embedding
+
+**Query Flow:**
+1. User profile = CV text + zusatz_infos (skills, interests)
+2. Embed profile (one-time, cached on Resume)
+3. Cosine similarity: `dot(a, b) / (norm(a) * norm(b))`
+4. Return top-k ranked jobs
+
+---
+
+## 8. CORS Configuration (Phase 2)
+
+```python
+# src/main.py
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+---
+
+## 9. Phased Execution Plan
+
+### Phase 1: Schema Migration
+* Add `Company` model with `CompanySizeEnum`
+* Modify `Job` to use `company_id` FK
+* Add `is_active`, `first_seen_at`, `last_seen_at`, `embedding` to Jobs
+* Add `embedding` to Resumes
+* Add `similarity_score` to Applications
+* Remove `Interviewing` from ApplicationStatus enum
+* Enable pg_trgm extension in database.py
+* Update init_db.py with test companies
+* Run DB reset
+
+### Phase 2: Self-Building Discovery + CORS
+* Implement pg_trgm fuzzy search queries
+* Add dynamic threshold logic
+* Implement exclusion prompting in search API calls
+* Save discovered companies to DB
+* Add CORS middleware
+
+### Phase 3: Hybrid Extraction with Upsert
+* Refactor extraction service with upsert logic
+* Implement ATS fast path with HTTPX
+* Keep Crawl4AI fallback
+* Generate job embeddings on insert
+* Create embeddings service
+
+### Phase 4: Vector Matching
+* Integrate OpenAI embeddings
+* Implement cosine similarity search
+* Build `/jobs/match` endpoint
+* Return ranked list (no text generation)
+
+### Phase 5: JIT Application Generation
+* Rename `/draft` to `/prepare`
+* Move cover letter generation to JIT trigger
+* Implement PII stripping
+* Dynamic resume tailoring
+* EU AI Act logging
+* Store similarity_score on application creation
+
+### Phase 6: Combined Pipeline + Testing
+* Create `/pipeline/search-and-match` endpoint
+* Update all tests for new schema
+* E2E test: search → match → prepare → approve
+* Performance optimization
+
+---
+
+## 10. Files to Create/Modify/Delete
+
+### Create
+| File | Purpose |
+|------|---------|
+| `src/services/embeddings.py` | OpenAI embedding generation |
+| `src/services/vector_match.py` | Cosine similarity logic |
+| `src/api/routers/pipeline.py` | Combined `/search-and-match` endpoint |
+
+### Modify
+| File | Changes |
+|------|---------|
+| `src/models.py` | Add Company, CompanySizeEnum; update Job with FK + new columns; add embedding fields to Job/Resume; add similarity_score to Application; remove Interviewing status |
+| `src/database.py` | Enable pg_trgm extension on startup |
+| `src/services/job_discovery.py` | Self-building logic, exclusion prompting, dynamic thresholds |
+| `src/services/hybrid_extraction.py` | Upsert logic, embedding generation on insert |
+| `src/api/routers/jobs.py` | New endpoints: `/search`, `/extract`, `/match` |
+| `src/api/routers/applications.py` | Rename `/draft` → `/prepare`, add JIT logic, store similarity_score |
+| `src/main.py` | Add CORS middleware, include pipeline router |
+| `requirements.txt` | Add `openai` |
+| `init_db.py` | Add test companies |
+
+### Delete
+| File | Reason |
+|------|--------|
+| `test_zai.py` | Debug file |
+| `test_zai2.py` | Debug file |
+| `poc_core_engine.py` | PoC complete |
+
+### Update Tests
+| File | Changes |
+|------|---------|
+| `tests/test_models.py` | Test new Company model, updated Job fields |
+| `tests/test_api/test_jobs.py` | Test new endpoints |
+| `tests/test_api/test_applications.py` | Test JIT pattern, similarity_score |
+| `tests/test_services/test_job_discovery.py` | Test self-building logic |
+| `tests/conftest.py` | Add fixtures for Company model |
+
+---
+
+## 11. Security Considerations
+
+### Already Covered
+| Threat | Protection |
+|--------|------------|
+| SQL Injection | SQLAlchemy parameterized queries |
+| Input Validation | Pydantic strict typing |
+| Rate Limiting | `check_rate_limit` dependency |
+| Auth | JWT via `verify_jwt` |
+
+### Extendable Later (via DI Pattern)
+| Threat | Solution |
+|--------|----------|
+| Brute Force | Account lockout middleware |
+| DDoS | Cloudflare / reverse proxy rate limiting |
+| PII in Logs | Log sanitization filter |
+
+---
+
+## 12. Async Migration Path (Future)
+
+When scaling requires async:
+
+```python
+# 1. Change DB driver: psycopg2-binary → asyncpg
+# 2. Use AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+# 3. Add await to queries
+result = await db.execute(query)
+
+# 4. HTTPX already supports async
+async with httpx.AsyncClient() as client:
+    response = await client.get(url)
+```
+
+The dependency injection pattern ensures no structural changes needed.

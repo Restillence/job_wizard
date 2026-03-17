@@ -2,21 +2,30 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from typing import Optional
 from sqlalchemy.pool import StaticPool
 from src.database import Base, get_db
 from src.main import app
-from src.models import User, Job, Resume, Application, ApplicationStatus, InterviewPrep
+from src.models import (
+    User,
+    Job,
+    Resume,
+    Application,
+    ApplicationStatus,
+    InterviewPrep,
+    Company,
+    CompanySize,
+)
 
-# Use a purely in-memory database
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
-# Force a single shared connection across all threads
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
+    SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
-    poolclass=StaticPool
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(bind=engine)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
@@ -26,6 +35,7 @@ def setup_db():
     Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
 
+
 def override_get_db():
     db = TestingSessionLocal()
     try:
@@ -33,16 +43,17 @@ def override_get_db():
     finally:
         db.close()
 
+
 @pytest.fixture
 def client():
     return TestClient(app)
 
+
 @pytest.fixture(autouse=True)
 def setup_test_user():
     db = TestingSessionLocal()
-    # Ensure it's clean
     db.query(User).filter(User.id == "test_user_id").delete()
-    
+
     user = User(id="test_user_id", email="test@test.com", hashed_password="pwd")
     db.add(user)
     db.commit()
@@ -50,3 +61,21 @@ def setup_test_user():
     db.query(User).delete()
     db.commit()
     db.close()
+
+
+def create_test_company(
+    db: Session, name: str = "Test Company", url: Optional[str] = None
+) -> Company:
+    company = db.query(Company).filter(Company.name == name).first()
+    if company:
+        return company
+    company = Company(
+        name=name,
+        url=url or f"https://{name.lower().replace(' ', '-')}.example.com/careers",
+        city="Berlin",
+        industry="Tech",
+        company_size=CompanySize.startup,
+    )
+    db.add(company)
+    db.commit()
+    return company

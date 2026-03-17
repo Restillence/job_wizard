@@ -2,8 +2,8 @@ import uuid
 import enum
 from typing import Any, Optional
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, JSON, ForeignKey, Enum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Text, DateTime, JSON, ForeignKey, Enum, Boolean, Float
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base
 
 
@@ -13,6 +13,19 @@ def get_utc_now() -> datetime:
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
+
+
+class CompanySize(str, enum.Enum):
+    startup = "startup"
+    hidden_champion = "hidden_champion"
+    enterprise = "enterprise"
+
+
+class ApplicationStatus(str, enum.Enum):
+    Drafted = "Drafted"
+    Approved = "Approved"
+    Sent = "Sent"
+    Rejected = "Rejected"
 
 
 class User(Base):
@@ -35,26 +48,46 @@ class User(Base):
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
 
-class Job(Base):
-    __tablename__ = "jobs"
+class Company(Base):
+    __tablename__ = "companies"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
-    source_url: Mapped[str] = mapped_column(String, unique=True)
-    title: Mapped[str] = mapped_column(String)
-    company: Mapped[str] = mapped_column(String)
-    description: Mapped[str] = mapped_column(Text)
-    extracted_requirements: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    name: Mapped[str] = mapped_column(String, index=True)
+    city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    industry: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    company_size: Mapped[Optional[CompanySize]] = mapped_column(
+        Enum(CompanySize), nullable=True
+    )
+    url: Mapped[str] = mapped_column(String, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )
 
+    jobs: Mapped[list["Job"]] = relationship(back_populates="company")
 
-class ApplicationStatus(str, enum.Enum):
-    Drafted = "Drafted"
-    Approved = "Approved"
-    Sent = "Sent"
-    Interviewing = "Interviewing"
-    Rejected = "Rejected"
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    company_id: Mapped[str] = mapped_column(String, ForeignKey("companies.id"))
+    source_url: Mapped[str] = mapped_column(String, unique=True, index=True)
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(Text)
+    extracted_requirements: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    embedding: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now
+    )
+
+    company: Mapped["Company"] = relationship(back_populates="jobs")
 
 
 class Resume(Base):
@@ -63,6 +96,7 @@ class Resume(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
     file_path: Mapped[str] = mapped_column(String)
+    embedding: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )
@@ -79,6 +113,7 @@ class Application(Base):
     )
     ai_match_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cover_letter_file_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    similarity_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )

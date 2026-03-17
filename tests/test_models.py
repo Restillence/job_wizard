@@ -4,7 +4,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
 from src.database import Base
-from src.models import User, Job, Resume, Application, ApplicationStatus, InterviewPrep
+from src.models import (
+    User,
+    Job,
+    Resume,
+    Application,
+    ApplicationStatus,
+    InterviewPrep,
+    Company,
+    CompanySize,
+)
 
 
 @pytest.fixture
@@ -15,6 +24,16 @@ def db_session() -> Generator[Session, None, None]:
     session = TestingSessionLocal()
     yield session
     session.close()
+
+
+def create_company(session: Session, name: str = "Test Inc") -> Company:
+    company = Company(
+        name=name,
+        url=f"https://{name.lower().replace(' ', '-')}.com/careers",
+    )
+    session.add(company)
+    session.commit()
+    return company
 
 
 class TestUser:
@@ -54,42 +73,88 @@ class TestUser:
         assert admin.is_superuser is True
 
 
+class TestCompany:
+    def test_create_company(self, db_session: Session) -> None:
+        company = Company(
+            name="TechCorp",
+            city="Berlin",
+            industry="Software",
+            company_size=CompanySize.startup,
+            url="https://techcorp.example.com/careers",
+        )
+        db_session.add(company)
+        db_session.commit()
+        assert company.id is not None
+        assert company.name == "TechCorp"
+        assert company.company_size == CompanySize.startup
+
+    def test_company_url_unique(self, db_session: Session) -> None:
+        c1 = Company(name="C1", url="https://unique.example.com/careers")
+        c2 = Company(name="C2", url="https://unique.example.com/careers")
+        db_session.add_all([c1, c2])
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
+
 class TestJob:
     def test_create_job(self, db_session: Session) -> None:
+        company = create_company(db_session)
         job = Job(
             source_url="http://test.com",
             title="Dev",
-            company="Test Inc",
+            company_id=company.id,
             description="Desc",
         )
         db_session.add(job)
         db_session.commit()
         assert job.id is not None
         assert job.extracted_requirements == {}
+        assert job.is_active is True
+        assert job.first_seen_at is not None
+        assert job.last_seen_at is not None
 
     def test_job_source_url_unique(self, db_session: Session) -> None:
+        company = create_company(db_session)
         job1 = Job(
             source_url="http://unique.com",
             title="Dev",
-            company="Inc",
+            company_id=company.id,
             description="Desc",
         )
         job2 = Job(
             source_url="http://unique.com",
             title="Dev2",
-            company="Inc2",
+            company_id=company.id,
             description="Desc2",
         )
         db_session.add_all([job1, job2])
         with pytest.raises(IntegrityError):
             db_session.commit()
 
+    def test_job_company_relationship(self, db_session: Session) -> None:
+        company = create_company(db_session, "RelCorp")
+        job = Job(
+            source_url="http://rel.com",
+            title="Dev",
+            company_id=company.id,
+            description="Desc",
+        )
+        db_session.add(job)
+        db_session.commit()
+
+        assert job.company is not None
+        assert job.company.name == "RelCorp"
+
 
 class TestApplication:
     def test_create_application(self, db_session: Session) -> None:
         user = User(email="app@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job = Job(
-            source_url="http://app.com", title="Dev", company="Inc", description="Desc"
+            source_url="http://app.com",
+            title="Dev",
+            company_id=company.id,
+            description="Desc",
         )
         db_session.add_all([user, job])
         db_session.commit()
@@ -102,13 +167,15 @@ class TestApplication:
         assert app.status == ApplicationStatus.Drafted
         assert app.ai_match_rationale is None
         assert app.cover_letter_file_path is None
+        assert app.similarity_score is None
 
     def test_application_status_transitions(self, db_session: Session) -> None:
         user = User(email="status@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job = Job(
             source_url="http://status.com",
             title="Dev",
-            company="Inc",
+            company_id=company.id,
             description="Desc",
         )
         db_session.add_all([user, job])
@@ -132,10 +199,11 @@ class TestApplication:
 
     def test_application_updated_at_changes(self, db_session: Session) -> None:
         user = User(email="updated@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job = Job(
             source_url="http://updated.com",
             title="Dev",
-            company="Inc",
+            company_id=company.id,
             description="Desc",
         )
         db_session.add_all([user, job])
@@ -153,10 +221,11 @@ class TestApplication:
 
     def test_application_with_ai_rationale(self, db_session: Session) -> None:
         user = User(email="rationale@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job = Job(
             source_url="http://rationale.com",
             title="Dev",
-            company="Inc",
+            company_id=company.id,
             description="Desc",
         )
         db_session.add_all([user, job])
@@ -166,11 +235,13 @@ class TestApplication:
             user_id=user.id,
             job_id=job.id,
             ai_match_rationale="Strong Python skills match requirements",
+            similarity_score=0.87,
         )
         db_session.add(app)
         db_session.commit()
 
         assert app.ai_match_rationale == "Strong Python skills match requirements"
+        assert app.similarity_score == 0.87
 
 
 class TestResume:
@@ -186,13 +257,18 @@ class TestResume:
         assert resume.id is not None
         assert resume.file_path == "uploads/resumes/test.pdf"
         assert resume.created_at is not None
+        assert resume.embedding is None
 
 
 class TestInterviewPrep:
     def test_create_interview_prep(self, db_session: Session) -> None:
         user = User(email="prep@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job = Job(
-            source_url="http://prep.com", title="Dev", company="Inc", description="Desc"
+            source_url="http://prep.com",
+            title="Dev",
+            company_id=company.id,
+            description="Desc",
         )
         db_session.add_all([user, job])
         db_session.commit()
@@ -223,11 +299,18 @@ class TestRelationships:
 
     def test_user_has_multiple_applications(self, db_session: Session) -> None:
         user = User(email="apps@example.com", hashed_password="pwd")
+        company = create_company(db_session)
         job1 = Job(
-            source_url="http://job1.com", title="Dev1", company="Inc", description="D1"
+            source_url="http://job1.com",
+            title="Dev1",
+            company_id=company.id,
+            description="D1",
         )
         job2 = Job(
-            source_url="http://job2.com", title="Dev2", company="Inc", description="D2"
+            source_url="http://job2.com",
+            title="Dev2",
+            company_id=company.id,
+            description="D2",
         )
         db_session.add_all([user, job1, job2])
         db_session.commit()
@@ -241,3 +324,27 @@ class TestRelationships:
             db_session.query(Application).filter(Application.user_id == user.id).all()
         )
         assert len(result) == 2
+
+    def test_company_has_multiple_jobs(self, db_session: Session) -> None:
+        company = Company(
+            name="MultiJobCorp", url="https://multijob.example.com/careers"
+        )
+        db_session.add(company)
+        db_session.commit()
+
+        job1 = Job(
+            source_url="http://mj1.com",
+            title="Job1",
+            company_id=company.id,
+            description="D1",
+        )
+        job2 = Job(
+            source_url="http://mj2.com",
+            title="Job2",
+            company_id=company.id,
+            description="D2",
+        )
+        db_session.add_all([job1, job2])
+        db_session.commit()
+
+        assert len(company.jobs) == 2

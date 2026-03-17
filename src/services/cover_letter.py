@@ -16,7 +16,7 @@ class CoverLetterService:
         
         Job Details:
         Title: {job.title}
-        Company: {job.company}
+        Company: {job.company.name if job.company else "Unknown"}
         Requirements: {job.extracted_requirements}
         Description: {job.description}
         
