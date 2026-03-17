@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import patch, MagicMock
 from src.services.embeddings import (
     generate_embedding,
@@ -6,7 +7,7 @@ from src.services.embeddings import (
     cosine_similarity,
     embedding_to_json,
     json_to_embedding,
-    GEMINI_EMBEDDING_DIMENSIONS,
+    EMBEDDING_DIMENSIONS,
 )
 
 
@@ -14,8 +15,8 @@ class TestEmbeddingFunctions:
     @patch("src.services.embeddings.settings")
     def test_generate_embedding_no_api_key(self, mock_settings):
         mock_settings.GEMINI_API_KEY = None
-        result = generate_embedding("test text")
-        assert result is None
+        with pytest.raises(ValueError, match="GEMINI_API_KEY is required"):
+            generate_embedding("test text")
 
     @patch("src.services.embeddings.embedding")
     def test_generate_embedding_success(self, mock_embedding):
@@ -62,7 +63,7 @@ class TestEmbeddingFunctions:
         mock_gen.assert_called_once()
 
     def test_embedding_dimensions_constant(self):
-        assert GEMINI_EMBEDDING_DIMENSIONS == 768
+        assert EMBEDDING_DIMENSIONS == 3072
 
 
 class TestCosineSimilarity:

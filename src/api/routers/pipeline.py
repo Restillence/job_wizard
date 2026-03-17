@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from src.database import get_db
@@ -108,13 +108,7 @@ async def search_and_match(
 
     resume = db.query(Resume).filter(Resume.user_id == request.user_id).first()
     if not resume:
-        return PipelineResponse(
-            companies_found=companies_result.total_found,
-            companies_new=companies_result.newly_added,
-            jobs_extracted=jobs_result["total_extracted"],
-            jobs_new=jobs_result["total_new"],
-            matched_jobs=[],
-        )
+        raise HTTPException(status_code=404, detail="Resume not found for user")
 
     resume_embedding = json_to_embedding(resume.embedding)
     if not resume_embedding and resume.file_path:
@@ -132,12 +126,8 @@ async def search_and_match(
                 db.commit()
 
     if not resume_embedding:
-        return PipelineResponse(
-            companies_found=companies_result.total_found,
-            companies_new=companies_result.newly_added,
-            jobs_extracted=jobs_result["total_extracted"],
-            jobs_new=jobs_result["total_new"],
-            matched_jobs=[],
+        raise HTTPException(
+            status_code=500, detail="Failed to generate resume embedding"
         )
 
     jobs_query = db.query(Job).filter(Job.is_active == True)  # noqa: E712

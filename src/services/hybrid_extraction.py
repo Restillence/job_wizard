@@ -13,6 +13,22 @@ from src.models import Job, Company
 from src.services.embeddings import generate_job_embedding, embedding_to_json
 
 
+def _run_async_safe(coro):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None:
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, coro)
+            return future.result()
+    else:
+        return asyncio.run(coro)
+
+
 class JobOpening(BaseModel):
     job_title: str
     application_url: str
@@ -193,7 +209,10 @@ class HybridExtractionService:
         elif ats_type == "workday":
             return self._extract_workday_jobs(url)
         else:
-            return asyncio.run(self._crawl4ai_fallback(url))
+            try:
+                return _run_async_safe(self._crawl4ai_fallback(url))
+            except Exception:
+                return ScrapedJobs(jobs=[])
 
     def upsert_jobs(
         self,

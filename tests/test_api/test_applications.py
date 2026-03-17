@@ -16,7 +16,7 @@ def test_prepare_application(client):
         title="Dev",
         company_id=company.id,
         description="Desc",
-        embedding=[0.1] * 768,
+        embedding=[0.1] * 3072,
     )
     db.add(job)
 
@@ -29,7 +29,7 @@ def test_prepare_application(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.1] * 768,
+        embedding=[0.1] * 3072,
     )
     db.add(resume)
     db.commit()

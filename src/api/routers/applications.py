@@ -6,7 +6,7 @@ from src.api.deps import verify_jwt, check_rate_limit
 from src.models import Application, Job, Resume, ApplicationStatus
 from src.services.cover_letter import CoverLetterService
 from src.services.pii_stripping import PIIStrippingService
-from src.services.embeddings import cosine_similarity
+from src.services.embeddings import cosine_similarity, json_to_embedding
 import uuid
 import os
 
@@ -45,10 +45,10 @@ async def prepare_application(
 
     similarity_score: Optional[float] = None
     if resume.embedding and job.embedding:
-        similarity_score = cosine_similarity(
-            resume.embedding if isinstance(resume.embedding, list) else [],
-            job.embedding if isinstance(job.embedding, list) else [],
-        )
+        resume_emb = json_to_embedding(resume.embedding)
+        job_emb = json_to_embedding(job.embedding)
+        if resume_emb and job_emb:
+            similarity_score = cosine_similarity(resume_emb, job_emb)
 
     try:
         cover_letter_text, ai_rationale = cover_letter_service.generate_draft(

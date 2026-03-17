@@ -4,8 +4,8 @@ import numpy as np
 from litellm import embedding
 from src.config import settings
 
-GEMINI_EMBEDDING_MODEL = "gemini/text-embedding-004"
-GEMINI_EMBEDDING_DIMENSIONS = 768
+GEMINI_EMBEDDING_MODEL = "gemini/gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 3072
 
 
 def generate_embedding(text: str) -> Optional[List[float]]:
@@ -13,18 +13,17 @@ def generate_embedding(text: str) -> Optional[List[float]]:
         return None
 
     if not settings.GEMINI_API_KEY:
-        return None
+        raise ValueError("GEMINI_API_KEY is required for embedding generation")
 
     try:
         response = embedding(
             model=GEMINI_EMBEDDING_MODEL,
-            input=text[:2048],
+            input=text[:8000],
             api_key=settings.GEMINI_API_KEY,
         )
         return list(response.data[0]["embedding"])
     except Exception as e:
-        print(f"Failed to generate embedding: {e}")
-        return None
+        raise RuntimeError(f"Failed to generate embedding: {e}")
 
 
 def generate_job_embedding(
