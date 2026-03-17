@@ -6,26 +6,25 @@ from src.services.embeddings import (
     cosine_similarity,
     embedding_to_json,
     json_to_embedding,
+    GEMINI_EMBEDDING_DIMENSIONS,
 )
 
 
 class TestEmbeddingFunctions:
     @patch("src.services.embeddings.settings")
     def test_generate_embedding_no_api_key(self, mock_settings):
-        mock_settings.OPENAI_API_KEY = None
+        mock_settings.GEMINI_API_KEY = None
         result = generate_embedding("test text")
         assert result is None
 
-    @patch("src.services.embeddings.get_openai_client")
-    def test_generate_embedding_success(self, mock_client_factory):
-        mock_client = MagicMock()
+    @patch("src.services.embeddings.embedding")
+    def test_generate_embedding_success(self, mock_embedding):
         mock_response = MagicMock()
-        mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3])]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_client_factory.return_value = mock_client
+        mock_response.data = [{"embedding": [0.1, 0.2, 0.3]}]
+        mock_embedding.return_value = mock_response
 
         with patch("src.services.embeddings.settings") as mock_settings:
-            mock_settings.OPENAI_API_KEY = "test-key"
+            mock_settings.GEMINI_API_KEY = "test-key"
             result = generate_embedding("test text")
 
         assert result == [0.1, 0.2, 0.3]
@@ -61,6 +60,9 @@ class TestEmbeddingFunctions:
 
         assert result == [0.4, 0.5, 0.6]
         mock_gen.assert_called_once()
+
+    def test_embedding_dimensions_constant(self):
+        assert GEMINI_EMBEDDING_DIMENSIONS == 768
 
 
 class TestCosineSimilarity:

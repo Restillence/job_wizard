@@ -16,7 +16,7 @@ def test_search_and_match_success(client):
         title="Senior Python Developer",
         company_id=company.id,
         description="Python, FastAPI, PostgreSQL",
-        embedding=[0.1] * 1536,
+        embedding=[0.1] * 768,
         is_active=True,
     )
     db.add(job)
@@ -30,7 +30,7 @@ def test_search_and_match_success(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.1] * 1536,
+        embedding=[0.1] * 768,
     )
     db.add(resume)
     db.commit()
@@ -133,7 +133,7 @@ def test_search_and_match_with_company_size(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.2] * 1536,
+        embedding=[0.2] * 768,
     )
     db.add(resume)
     db.commit()
@@ -192,7 +192,7 @@ def test_search_and_match_with_keywords(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.3] * 1536,
+        embedding=[0.3] * 768,
     )
     db.add(resume)
     db.commit()

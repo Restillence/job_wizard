@@ -1,34 +1,27 @@
 import json
 from typing import List, Optional
 import numpy as np
-from openai import OpenAI
+from litellm import embedding
 from src.config import settings
 
-
-client: Optional[OpenAI] = None
-
-
-def get_openai_client() -> OpenAI:
-    global client
-    if client is None:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    return client
+GEMINI_EMBEDDING_MODEL = "gemini/text-embedding-004"
+GEMINI_EMBEDDING_DIMENSIONS = 768
 
 
 def generate_embedding(text: str) -> Optional[List[float]]:
     if not text or not text.strip():
         return None
 
-    if not settings.OPENAI_API_KEY:
+    if not settings.GEMINI_API_KEY:
         return None
 
     try:
-        openai_client = get_openai_client()
-        response = openai_client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text[:8000],
+        response = embedding(
+            model=GEMINI_EMBEDDING_MODEL,
+            input=text[:2048],
+            api_key=settings.GEMINI_API_KEY,
         )
-        return list(response.data[0].embedding)
+        return list(response.data[0]["embedding"])
     except Exception as e:
         print(f"Failed to generate embedding: {e}")
         return None
