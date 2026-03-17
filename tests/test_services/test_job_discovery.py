@@ -34,5 +34,5 @@ def test_discover_companies(mock_ddgs_class, mock_completion, mock_settings) -> 
     assert result[0].company_name == "TestCorp"
     assert result[0].career_url == "https://testcorp.com/careers"
 
-    mock_ddgs_instance.text.assert_called_once_with("Test query", max_results=10)
+    mock_ddgs_instance.text.assert_called_once_with("Test query", max_results=20)
     mock_completion.assert_called_once()
