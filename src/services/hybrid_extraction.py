@@ -55,7 +55,7 @@ class HybridExtractionService:
     ATS_PATTERNS = {
         "personio": r"personio\.(de|com)",
         "greenhouse": r"greenhouse\.io",
-        "workday": r"workday\.com",
+        "workday": r"(my)?workday.*\.com",
         "generic": r"index\.php\?ac=jobad",
     }
 
