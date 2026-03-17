@@ -1,5 +1,5 @@
 from typing import Any, Generator
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from src.config import settings
 
@@ -20,7 +20,7 @@ def enable_pg_trgm() -> None:
     """Enable pg_trgm extension for PostgreSQL fuzzy search."""
     if not settings.DATABASE_URL.startswith("postgresql"):
         return
-    
+
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         conn.commit()

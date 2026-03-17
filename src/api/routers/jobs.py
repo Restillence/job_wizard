@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 from src.database import get_db
 from sqlalchemy.orm import Session
@@ -206,7 +206,7 @@ async def match_jobs(
                 status_code=500, detail="Failed to generate resume embedding"
             )
 
-    jobs_query = db.query(Job).filter(Job.is_active == True)
+    jobs_query = db.query(Job).filter(Job.is_active == True)  # noqa: E712
 
     if request.company_ids:
         jobs_query = jobs_query.filter(Job.company_id.in_(request.company_ids))

@@ -1,6 +1,6 @@
-from typing import Any
 import litellm
 from src.config import settings
+
 
 class PIIStrippingService:
     def strip_pii(self, text: str) -> str:
@@ -17,6 +17,6 @@ class PIIStrippingService:
             api_base=settings.ZAI_API_BASE,
             api_key=settings.ZAI_API_KEY,
         )
-        # Type hint for response.choices[0].message.content is tricky, 
+        # Type hint for response.choices[0].message.content is tricky,
         # but litellm returns a ModelResponse object
         return str(response.choices[0].message.content).strip()

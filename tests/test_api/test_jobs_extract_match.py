@@ -1,9 +1,7 @@
 import uuid
-import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tests.conftest import TestingSessionLocal, create_test_company
-from src.models import Job, Resume, Company, CompanySize
-from src.services.hybrid_extraction import ExtractionResult
+from src.models import Job, Resume
 
 
 class TestExtractJobs:

@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock, patch
 from src.services.cover_letter import CoverLetterService
 from src.models import Job, Company as CompanyModel

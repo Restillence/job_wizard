@@ -8,11 +8,6 @@ from src.database import Base, get_db
 from src.main import app
 from src.models import (
     User,
-    Job,
-    Resume,
-    Application,
-    ApplicationStatus,
-    InterviewPrep,
     Company,
     CompanySize,
 )

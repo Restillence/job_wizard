@@ -89,6 +89,8 @@ def embedding_to_json(embedding: Optional[List[float]]) -> Optional[str]:
 def json_to_embedding(json_str: Optional[str]) -> Optional[List[float]]:
     if json_str is None:
         return None
+    if isinstance(json_str, list):
+        return json_str
     try:
         return json.loads(json_str)
     except (json.JSONDecodeError, TypeError):

@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch
 from src.services.hybrid_extraction import (
     HybridExtractionService,
     ScrapedJobs,

@@ -1,6 +1,5 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from src.services.job_discovery import JobDiscoveryService, Company
+from src.services.job_discovery import JobDiscoveryService
 
 
 @patch("src.services.job_discovery.settings")

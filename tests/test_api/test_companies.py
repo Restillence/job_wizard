@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tests.conftest import TestingSessionLocal, create_test_company
 from src.models import Company, CompanySize
 from src.services.job_discovery import CompanySearchResult

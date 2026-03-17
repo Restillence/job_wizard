@@ -1,8 +1,8 @@
 import json
-from typing import Optional
 from litellm import completion
 from src.config import settings
-from src.models import Job, Resume
+from src.models import Job
+
 
 class CoverLetterService:
     def generate_draft(self, job: Job, resume_text: str) -> tuple[str, str]:
@@ -41,10 +41,13 @@ class CoverLetterService:
 
         if raw_json.startswith("```"):
             import re
+
             raw_json = re.sub(r"^```(?:json)?\n|\n```$", "", raw_json)
 
         try:
             parsed = json.loads(raw_json)
             return parsed.get("cover_letter", ""), parsed.get("ai_match_rationale", "")
         except Exception as e:
-            raise ValueError(f"Failed to parse LLM cover letter response: {raw_json}") from e
+            raise ValueError(
+                f"Failed to parse LLM cover letter response: {raw_json}"
+            ) from e
