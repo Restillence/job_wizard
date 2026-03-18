@@ -1,10 +1,10 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from pydantic import BaseModel, Field
 from src.database import get_db
 from sqlalchemy.orm import Session
 from src.api.deps import verify_jwt, check_rate_limit
-from src.services.job_discovery import JobDiscoveryService, Company
+from src.services.job_discovery import JobDiscoveryService, Company, CompanySize
 from src.services.hybrid_extraction import HybridExtractionService
 from src.services.embeddings import (
     cosine_similarity,
@@ -19,27 +19,32 @@ discovery_service = JobDiscoveryService()
 extraction_service = HybridExtractionService()
 
 
-class DiscoverQuery(BaseModel):
-    query: str = Field(
-        ...,
-        description=(
-            "The search query for job discovery. "
-            "TIP: Avoid generic searches like 'data science frankfurt'. "
-            "Instead, use search operators or target specific niches to bypass job boards like LinkedIn."
-        ),
+class DiscoverRequest(BaseModel):
+    cities: Optional[List[str]] = Field(None, description="Filter by cities (OR logic)")
+    industries: Optional[List[str]] = Field(
+        None, description="Filter by industries (OR logic)"
+    )
+    keywords: Optional[List[str]] = Field(None, description="Keywords for search")
+    company_size: Optional[str] = Field(
+        None, description="startup, hidden_champion, or enterprise"
     )
 
     model_config = {
         "json_schema_extra": {
-            "example": {"query": "Data Science jobs Frankfurt site:careers.*.com"}
+            "example": {
+                "cities": ["Berlin"],
+                "industries": ["AI"],
+                "keywords": ["Python", "FastAPI"],
+                "company_size": "startup",
+            }
         }
     }
 
 
 class DiscoverResponse(BaseModel):
     message: str
-    query: str
     companies: List[Company]
+    total_found: int
 
 
 class ExtractRequest(BaseModel):
@@ -97,22 +102,25 @@ class MatchResponse(BaseModel):
 
 @router.post("/discover", response_model=DiscoverResponse)
 async def discover_jobs(
-    query: DiscoverQuery = Body(
+    request: DiscoverRequest = Body(
         ...,
         openapi_examples={
-            "Example 1 (Operators)": {
-                "summary": "Using search operators",
-                "value": {"query": "Data Science jobs Frankfurt site:careers.*.com"},
-            },
-            "Example 2 (Exclude Job Boards)": {
-                "summary": "Excluding LinkedIn and StepStone",
+            "Example 1 (Berlin AI)": {
+                "summary": "AI companies in Berlin",
                 "value": {
-                    "query": "AI Engineer Berlin intitle:careers -linkedin -stepstone"
+                    "cities": ["Berlin"],
+                    "industries": ["AI"],
+                    "keywords": ["Python"],
+                    "company_size": "startup",
                 },
             },
-            "Example 3 (Targeted Niches)": {
-                "summary": "Specific AI Startups",
-                "value": {"query": "top AI startups hiring in Berlin 2026"},
+            "Example 2 (Multiple Cities)": {
+                "summary": "FinTech in Berlin and Munich",
+                "value": {
+                    "cities": ["Berlin", "Munich"],
+                    "industries": ["FinTech"],
+                    "keywords": ["Backend"],
+                },
             },
         },
     ),
@@ -120,12 +128,31 @@ async def discover_jobs(
     user_info: dict = Depends(verify_jwt),
     _rate_limit: bool = Depends(check_rate_limit),
 ):
+    """
+    Discover companies with career pages using structured search.
+
+    - Uses two-step extraction: finds company names, predicts career URLs
+    - Filters out job aggregators (LinkedIn, Indeed, etc.)
+    - Validates URLs with HEAD requests
+    """
     try:
-        companies = discovery_service.discover_companies(query.query)
+        company_size_enum = None
+        if request.company_size:
+            try:
+                company_size_enum = CompanySize(request.company_size)
+            except ValueError:
+                pass
+
+        companies = discovery_service.discover_companies(
+            cities=request.cities,
+            industries=request.industries,
+            keywords=request.keywords,
+            company_size=company_size_enum,
+        )
         return {
             "message": "Job discovery successful",
-            "query": query.query,
             "companies": companies,
+            "total_found": len(companies),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -20,8 +20,10 @@ extraction_service = HybridExtractionService()
 
 
 class PipelineRequest(BaseModel):
-    city: Optional[str] = Field(None, description="Filter by city")
-    industry: Optional[str] = Field(None, description="Filter by industry")
+    cities: Optional[List[str]] = Field(None, description="Filter by cities (OR logic)")
+    industries: Optional[List[str]] = Field(
+        None, description="Filter by industries (OR logic)"
+    )
     keywords: Optional[List[str]] = Field(None, description="Keywords for search")
     company_size: Optional[str] = Field(
         None, description="startup, hidden_champion, or enterprise"
@@ -32,8 +34,8 @@ class PipelineRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "city": "Berlin",
-                "industry": "AI",
+                "cities": ["Berlin", "Munich"],
+                "industries": ["AI", "FinTech"],
                 "keywords": ["python"],
                 "company_size": "startup",
                 "user_id": "uuid",
@@ -69,12 +71,11 @@ async def search_and_match(
     """
     One-shot job discovery with matching.
 
-    1. Search companies (local DB + API fallback)
+    1. Search companies (local DB + API fallback with two-step extraction)
     2. Extract jobs from found companies
     3. Match user profile against jobs
+    4. Save search to user history (max 5 per user)
     """
-    keywords_str = " ".join(request.keywords) if request.keywords else None
-
     company_size_enum = None
     if request.company_size:
         try:
@@ -84,9 +85,10 @@ async def search_and_match(
 
     companies_result = discovery_service.search_companies(
         db=db,
-        city=request.city,
-        industry=request.industry,
-        keywords=keywords_str,
+        user_id=request.user_id,
+        cities=request.cities,
+        industries=request.industries,
+        keywords=request.keywords,
         company_size=company_size_enum,
     )
 

@@ -57,8 +57,8 @@ def test_search_and_match_success(client):
         response = client.post(
             "/api/v1/pipeline/search-and-match",
             json={
-                "city": "Berlin",
-                "industry": "Tech",
+                "cities": ["Berlin"],
+                "industries": ["Tech"],
                 "user_id": user_id,
                 "top_k": 10,
             },
@@ -79,6 +79,9 @@ def test_search_and_match_success(client):
 def test_search_and_match_no_resume(client):
     db = TestingSessionLocal()
     user_id = "test_user_id"
+
+    db.query(Resume).filter(Resume.user_id == user_id).delete()
+    db.commit()
 
     company = create_test_company(db, "Pipeline No Resume Co")
 
@@ -109,10 +112,7 @@ def test_search_and_match_no_resume(client):
             },
         )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["companies_found"] == 1
-    assert data["matched_jobs"] == []
+    assert response.status_code == 404
     db.close()
 
 
@@ -229,7 +229,67 @@ def test_search_and_match_with_keywords(client):
 
     mock_search.assert_called_once()
     call_kwargs = mock_search.call_args[1]
-    assert call_kwargs["keywords"] == "python django"
+    assert call_kwargs["keywords"] == ["python", "django"]
+
+    os.remove(resume_file_path)
+    db.close()
+
+
+def test_search_and_match_multiple_cities_industries(client):
+    db = TestingSessionLocal()
+    user_id = "test_user_id"
+
+    os.makedirs("uploads/resumes", exist_ok=True)
+    resume_file_path = f"uploads/resumes/pipeline_resume_{uuid.uuid4()}.txt"
+    with open(resume_file_path, "w") as f:
+        f.write("Developer resume")
+
+    resume = Resume(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        file_path=resume_file_path,
+        embedding=[0.4] * 3072,
+    )
+    db.add(resume)
+    db.commit()
+
+    with (
+        patch(
+            "src.api.routers.pipeline.discovery_service.search_companies"
+        ) as mock_search,
+        patch(
+            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
+        ) as mock_extract,
+    ):
+        mock_search.return_value = MagicMock(
+            companies=[],
+            total_found=0,
+            newly_added=0,
+            source="local",
+        )
+        mock_extract.return_value = {
+            "total_extracted": 0,
+            "total_new": 0,
+        }
+
+        response = client.post(
+            "/api/v1/pipeline/search-and-match",
+            json={
+                "cities": ["Berlin", "Munich", "Frankfurt"],
+                "industries": ["AI", "FinTech"],
+                "keywords": ["Python"],
+                "user_id": user_id,
+                "top_k": 10,
+            },
+        )
+
+    assert response.status_code == 200
+
+    mock_search.assert_called_once()
+    call_kwargs = mock_search.call_args[1]
+    assert call_kwargs["cities"] == ["Berlin", "Munich", "Frankfurt"]
+    assert call_kwargs["industries"] == ["AI", "FinTech"]
+    assert call_kwargs["keywords"] == ["Python"]
 
     os.remove(resume_file_path)
     db.close()

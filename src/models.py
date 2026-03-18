@@ -59,6 +59,7 @@ class Company(Base):
         Enum(CompanySize), nullable=True
     )
     url: Mapped[str] = mapped_column(String, unique=True)
+    url_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )
@@ -132,3 +133,19 @@ class InterviewPrep(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )
+
+
+class UserSearch(Base):
+    __tablename__ = "user_searches"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    cities: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    industries: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    keywords: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    company_size: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now
+    )
+
+    user: Mapped["User"] = relationship(backref="searches")

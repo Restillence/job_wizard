@@ -162,7 +162,11 @@ class TestLiveCompanyDiscovery:
         from src.services.job_discovery import JobDiscoveryService
 
         service = JobDiscoveryService()
-        companies = service.discover_companies("Python developer jobs Berlin")
+        companies = service.discover_companies(
+            cities=["Berlin"],
+            industries=["Software"],
+            keywords=["Python"],
+        )
 
         assert len(companies) >= 0, "Discovery should complete"
         for company in companies[:5]:
@@ -306,7 +310,7 @@ class TestLiveFullPipeline:
         """Test company search with real API fallback (may take 30-60s)."""
         response = client.get(
             "/api/v1/companies/search",
-            params={"keywords": "Python", "industry": "Software"},
+            params={"keywords": ["Python"], "industries": ["Software"]},
         )
 
         assert response.status_code == 200, f"Request failed: {response.text}"

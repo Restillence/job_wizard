@@ -13,6 +13,7 @@ from src.models import (
     InterviewPrep,
     Company,
     CompanySize,
+    UserSearch,
 )
 
 
@@ -348,3 +349,50 @@ class TestRelationships:
         db_session.commit()
 
         assert len(company.jobs) == 2
+
+
+class TestUserSearch:
+    def test_create_user_search(self, db_session: Session) -> None:
+        user = User(email="search@example.com", hashed_password="pwd")
+        db_session.add(user)
+        db_session.commit()
+
+        search = UserSearch(
+            user_id=user.id,
+            cities=["Berlin", "Munich"],
+            industries=["AI", "FinTech"],
+            keywords=["Python", "FastAPI"],
+            company_size="startup",
+        )
+        db_session.add(search)
+        db_session.commit()
+
+        assert search.id is not None
+        assert search.cities == ["Berlin", "Munich"]
+        assert search.industries == ["AI", "FinTech"]
+        assert search.keywords == ["Python", "FastAPI"]
+        assert search.company_size == "startup"
+        assert search.created_at is not None
+
+    def test_user_has_multiple_searches(self, db_session: Session) -> None:
+        user = User(email="multisearch@example.com", hashed_password="pwd")
+        db_session.add(user)
+        db_session.commit()
+
+        search1 = UserSearch(
+            user_id=user.id,
+            cities=["Berlin"],
+            industries=["AI"],
+        )
+        search2 = UserSearch(
+            user_id=user.id,
+            cities=["Munich"],
+            industries=["FinTech"],
+        )
+        db_session.add_all([search1, search2])
+        db_session.commit()
+
+        result = (
+            db_session.query(UserSearch).filter(UserSearch.user_id == user.id).all()
+        )
+        assert len(result) == 2

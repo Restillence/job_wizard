@@ -27,6 +27,7 @@ def test_search_companies_local_only(client):
                     "industry": "Tech",
                     "company_size": "startup",
                     "url": "https://berlin-tech-1.example.com/careers",
+                    "url_verified": True,
                 },
             ],
             total_found=1,
@@ -34,7 +35,9 @@ def test_search_companies_local_only(client):
             source="local",
         )
 
-        response = client.get("/api/v1/companies/search", params={"keywords": "Berlin"})
+        response = client.get(
+            "/api/v1/companies/search", params={"keywords": ["Berlin"]}
+        )
 
     assert response.status_code == 200
     data = response.json()
@@ -69,6 +72,7 @@ def test_search_companies_by_city(client):
                     "industry": "Finance",
                     "company_size": "enterprise",
                     "url": "https://frankfurt-finance.example.com/careers",
+                    "url_verified": False,
                 },
             ],
             total_found=1,
@@ -76,7 +80,9 @@ def test_search_companies_by_city(client):
             source="local",
         )
 
-        response = client.get("/api/v1/companies/search", params={"city": "Frankfurt"})
+        response = client.get(
+            "/api/v1/companies/search", params={"cities": ["Frankfurt"]}
+        )
 
     assert response.status_code == 200
     data = response.json()
@@ -111,6 +117,7 @@ def test_search_companies_by_size(client):
                     "industry": "Tech",
                     "company_size": "startup",
                     "url": "https://tiny-startup.example.com/careers",
+                    "url_verified": True,
                 },
             ],
             total_found=1,
@@ -162,6 +169,7 @@ def test_search_companies_api_fallback(client):
                     "industry": None,
                     "company_size": None,
                     "url": "https://new.example.com/careers",
+                    "url_verified": False,
                 },
             ],
             total_found=1,
@@ -170,10 +178,77 @@ def test_search_companies_api_fallback(client):
         )
 
         response = client.get(
-            "/api/v1/companies/search", params={"keywords": "nonexistent"}
+            "/api/v1/companies/search", params={"keywords": ["nonexistent"]}
         )
 
     assert response.status_code == 200
     data = response.json()
     assert data["source"] == "api_fallback"
     assert data["newly_added"] == 1
+
+
+def test_search_companies_multiple_cities(client):
+    with patch(
+        "src.api.routers.companies.discovery_service.search_companies"
+    ) as mock_search:
+        mock_search.return_value = CompanySearchResult(
+            companies=[
+                {
+                    "id": "1",
+                    "name": "Berlin Corp",
+                    "city": "Berlin",
+                    "industry": "Tech",
+                    "company_size": "startup",
+                    "url": "https://berlincorp.com/careers",
+                    "url_verified": True,
+                },
+                {
+                    "id": "2",
+                    "name": "Munich Corp",
+                    "city": "Munich",
+                    "industry": "Tech",
+                    "company_size": "startup",
+                    "url": "https://munichcorp.com/careers",
+                    "url_verified": True,
+                },
+            ],
+            total_found=2,
+            newly_added=2,
+            source="api_fallback",
+        )
+
+        response = client.get(
+            "/api/v1/companies/search",
+            params={"cities": ["Berlin", "Munich"], "industries": ["Tech"]},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_found"] == 2
+    assert len(data["companies"]) == 2
+
+
+def test_resolve_company_url(client):
+    db = TestingSessionLocal()
+    company = Company(
+        id=str(uuid.uuid4()),
+        name="TestCorp",
+        url="https://testcorp.com/careers",
+        url_verified=False,
+    )
+    db.add(company)
+    db.commit()
+    company_id = company.id
+    db.close()
+
+    with patch(
+        "src.api.routers.companies.discovery_service.resolve_company_url_in_db"
+    ) as mock_resolve:
+        mock_resolve.return_value = "https://careers.testcorp.com"
+
+        response = client.post(f"/api/v1/companies/{company_id}/resolve-url")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["resolved"] is True
+    assert data["new_url"] == "https://careers.testcorp.com"

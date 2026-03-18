@@ -6,7 +6,7 @@
 
 **Architecture:** API-first, Synchronous-First/Scale-Later methodology.
 
-**Tech Stack:** Python 3.12+ (in `jobwiz_env` conda env), FastAPI, SQLAlchemy 2.0, Pydantic 2.0, PostgreSQL (with pg_trgm extension), HTTPX, Crawl4AI, OpenAI Embeddings, Pytest.
+**Tech Stack:** Python 3.11+ (in `jobwiz_env` conda env), FastAPI, SQLAlchemy 2.0, Pydantic 2.0, PostgreSQL (with pg_trgm extension), HTTPX, Crawl4AI, LiteLLM (Gemini Embeddings), Pytest.
 
 ---
 
@@ -79,7 +79,19 @@ PostgreSQL with SQLAlchemy 2.0. **Enable pg_trgm extension for fuzzy search.**
 | `industry` | String | Nullable |
 | `company_size` | Enum | `startup`, `hidden_champion`, `enterprise` |
 | `url` | String | Career page URL, Unique |
+| `url_verified` | Boolean | Default: False (HEAD validated vs LLM-predicted) |
 | `created_at` | DateTime (UTC) | |
+
+### UserSearches
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary Key |
+| `user_id` | UUID | FK → Users.id |
+| `cities` | JSON | List of cities searched |
+| `industries` | JSON | List of industries searched |
+| `keywords` | JSON | List of keywords searched |
+| `company_size` | String | Nullable |
+| `created_at` | DateTime (UTC) | Auto-deleted after 5 searches per user |
 
 ### Jobs
 | Column | Type | Notes |
@@ -90,7 +102,7 @@ PostgreSQL with SQLAlchemy 2.0. **Enable pg_trgm extension for fuzzy search.**
 | `title` | String | |
 | `description` | Text | |
 | `extracted_requirements` | JSONB | Parsed via AI/Scraper |
-| `embedding` | JSON | OpenAI text-embedding-3-small (1536 floats, stored as JSON) |
+| `embedding` | JSON | Gemini text-embedding-004 (3072 floats, stored as JSON) |
 | `is_active` | Boolean | Default: True (soft-delete for removed jobs) |
 | `first_seen_at` | DateTime (UTC) | When first discovered |
 | `last_seen_at` | DateTime (UTC) | Last confirmed active |
@@ -102,7 +114,7 @@ PostgreSQL with SQLAlchemy 2.0. **Enable pg_trgm extension for fuzzy search.**
 | `id` | UUID | Primary Key |
 | `user_id` | UUID | FK → Users.id |
 | `file_path` | String | Relative path |
-| `embedding` | JSON | Pre-computed user profile embedding (1536 floats) |
+| `embedding` | JSON | Pre-computed user profile embedding (3072 floats) |
 | `created_at` | DateTime (UTC) | |
 
 ### Applications
@@ -128,9 +140,9 @@ PostgreSQL with SQLAlchemy 2.0. **Enable pg_trgm extension for fuzzy search.**
 Search local companies with fuzzy matching. Triggers self-building logic if results below threshold.
 
 **Query Params (all Optional):**
-* `city`: Filter by city
-* `industry`: Filter by industry
-* `keywords`: Fuzzy search on company name
+* `cities`: List of cities (OR logic)
+* `industries`: List of industries (OR logic)
+* `keywords`: List of keywords for fuzzy search
 * `company_size`: Filter by enum (`startup`, `hidden_champion`, `enterprise`)
 
 **Logic:**
@@ -138,8 +150,12 @@ Search local companies with fuzzy matching. Triggers self-building logic if resu
 2. Calculate dynamic threshold based on query specificity:
    - Broad query (all params empty): `MIN_RESULTS_THRESHOLD = 50`
    - Specific query (any filter provided): `MIN_RESULTS_THRESHOLD = 5`
-3. If count < threshold → trigger ONE-TIME search API fallback with exclusion prompting
-4. Save new companies to DB, return combined results
+3. If count < threshold → trigger ONE-TIME search API fallback with:
+   - **Two-Step Extraction**: LLM extracts company names from job listings, then predicts career URLs
+   - **Aggregator Exclusion**: Always exclude LinkedIn, Indeed, Glassdoor, StepStone, XING
+   - **Exclusion Prompting**: Exclude existing DB company names
+4. HEAD validate predicted URLs → mark `url_verified = True/False`
+5. Save new companies to DB, return combined results
 
 **Response:**
 ```json
@@ -150,6 +166,15 @@ Search local companies with fuzzy matching. Triggers self-building logic if resu
   "source": "local" | "api_fallback"
 }
 ```
+
+#### `GET /api/v1/companies/{company_id}/resolve-url`
+Resolve unverified company URL by performing real search.
+
+**Logic:**
+1. If `url_verified = True`, return existing URL
+2. If `url_verified = False`, search for actual company career page
+3. Update `url` and set `url_verified = True`
+4. Return resolved URL
 
 #### `POST /api/v1/jobs/extract`
 Extract jobs from specified company career pages.
@@ -257,10 +282,10 @@ One-shot job discovery with matching.
 **Body:**
 ```json
 {
-  "city": "Berlin",           // optional
-  "industry": "AI",           // optional
-  "keywords": ["python"],     // optional
-  "company_size": "startup",  // optional
+  "cities": ["Berlin", "Munich"],  // optional, OR logic
+  "industries": ["AI", "FinTech"], // optional, OR logic
+  "keywords": ["python"],          // optional
+  "company_size": "startup",       // optional
   "user_id": "uuid",
   "top_k": 20
 }
@@ -270,7 +295,8 @@ One-shot job discovery with matching.
 1. Call `/companies/search` logic
 2. Call `/jobs/extract` logic for found companies
 3. Call `/jobs/match` logic for user
-4. Return combined results
+4. Save search to user history (max 5 per user)
+5. Return combined results
 
 **Response:**
 ```json
@@ -299,12 +325,30 @@ MIN_RESULTS_THRESHOLD:
   - Broad query (no filters): 50 companies
   - Specific query (any filter): 5 companies
 
+TWO-STEP EXTRACTION:
+When search API returns job aggregator results:
+  Step 1: LLM extracts company names from job listings
+  Step 2: LLM predicts career page URLs for each company
+  Step 3: HEAD validate predicted URLs (mark url_verified=True/False)
+  Lazy Resolution: When user clicks unverified company, do real search
+
+AGGREGATOR EXCLUSION:
+Always exclude these domains from results:
+  - linkedin.com, indeed.com, glassdoor.com, stepstone.de, xing.com
+
 EXCLUSION PROMPTING:
 When calling search API (Tavily/Serper/Brave/DDG):
   "Find 20 companies matching [query], but EXCLUDE companies:
    [Company A, Company B, Company C, ...existing DB names...]"
   
   This guarantees continuous DB growth without duplicates.
+
+CITY-PRIMARY QUERY STRATEGY:
+For multiple cities/industries/keywords:
+  - Execute one query per city (max 5 cities)
+  - Combine industries/keywords into each query
+  - Dedupe results across queries
+  - Always append aggregator exclusions to queries
 ```
 
 ---
@@ -328,7 +372,7 @@ When calling search API (Tavily/Serper/Brave/DDG):
 
 ## 7. Vector RAG Pipeline
 
-**Embedding Model:** `text-embedding-3-small` (1536 dimensions)
+**Embedding Model:** `gemini-embedding-001` (3072 dimensions)
 
 **Pre-compute on:**
 * Resume upload → store on Resume.embedding
@@ -361,7 +405,7 @@ app.add_middleware(
 
 ## 9. Phased Execution Plan
 
-### Phase 1: Schema Migration
+### Phase 1: Schema Migration ✅ COMPLETE
 * Add `Company` model with `CompanySizeEnum`
 * Modify `Job` to use `company_id` FK
 * Add `is_active`, `first_seen_at`, `last_seen_at`, `embedding` to Jobs
@@ -372,27 +416,31 @@ app.add_middleware(
 * Update init_db.py with test companies
 * Run DB reset
 
-### Phase 2: Self-Building Discovery + CORS
+### Phase 2: Self-Building Discovery + CORS ✅ COMPLETE
 * Implement pg_trgm fuzzy search queries
 * Add dynamic threshold logic
+* Implement two-step extraction (LLM extracts company names, predicts URLs)
 * Implement exclusion prompting in search API calls
+* Implement aggregator filtering (LinkedIn, Indeed, Glassdoor, etc.)
+* Add `url_verified` field to Company model
 * Save discovered companies to DB
+* Save user searches (max 5 per user)
 * Add CORS middleware
 
-### Phase 3: Hybrid Extraction with Upsert
+### Phase 3: Hybrid Extraction with Upsert ✅ COMPLETE
 * Refactor extraction service with upsert logic
 * Implement ATS fast path with HTTPX
 * Keep Crawl4AI fallback
 * Generate job embeddings on insert
 * Create embeddings service
 
-### Phase 4: Vector Matching
-* Integrate OpenAI embeddings
+### Phase 4: Vector Matching ✅ COMPLETE
+* Integrate Gemini embeddings
 * Implement cosine similarity search
 * Build `/jobs/match` endpoint
 * Return ranked list (no text generation)
 
-### Phase 5: JIT Application Generation
+### Phase 5: JIT Application Generation ✅ COMPLETE
 * Rename `/draft` to `/prepare`
 * Move cover letter generation to JIT trigger
 * Implement PII stripping
@@ -400,11 +448,12 @@ app.add_middleware(
 * EU AI Act logging
 * Store similarity_score on application creation
 
-### Phase 6: Combined Pipeline + Testing
+### Phase 6: Combined Pipeline + Testing ✅ COMPLETE
 * Create `/pipeline/search-and-match` endpoint
+* Add multi-value params (cities, industries, keywords as lists)
+* Add `/api/v1/users/{user_id}/searches` endpoints
 * Update all tests for new schema
-* E2E test: search → match → prepare → approve
-* Performance optimization
+* 80/80 tests passing
 
 ---
 
@@ -413,21 +462,24 @@ app.add_middleware(
 ### Create
 | File | Purpose |
 |------|---------|
-| `src/services/embeddings.py` | OpenAI embedding generation |
+| `src/services/embeddings.py` | Gemini embedding generation |
 | `src/services/vector_match.py` | Cosine similarity logic |
 | `src/api/routers/pipeline.py` | Combined `/search-and-match` endpoint |
+| `src/api/routers/users.py` | Saved searches endpoints |
 
 ### Modify
 | File | Changes |
 |------|---------|
-| `src/models.py` | Add Company, CompanySizeEnum; update Job with FK + new columns; add embedding fields to Job/Resume; add similarity_score to Application; remove Interviewing status |
+| `src/models.py` | Add Company, CompanySizeEnum, UserSearch; update Job with FK + new columns; add embedding fields to Job/Resume; add similarity_score to Application; remove Interviewing status; add url_verified to Company |
 | `src/database.py` | Enable pg_trgm extension on startup |
-| `src/services/job_discovery.py` | Self-building logic, exclusion prompting, dynamic thresholds |
+| `src/services/job_discovery.py` | Self-building logic, two-step extraction, exclusion prompting, dynamic thresholds, saved searches |
 | `src/services/hybrid_extraction.py` | Upsert logic, embedding generation on insert |
 | `src/api/routers/jobs.py` | New endpoints: `/search`, `/extract`, `/match` |
+| `src/api/routers/companies.py` | Multi-value params (cities, industries, keywords), `/resolve-url` endpoint |
 | `src/api/routers/applications.py` | Rename `/draft` → `/prepare`, add JIT logic, store similarity_score |
-| `src/main.py` | Add CORS middleware, include pipeline router |
-| `requirements.txt` | Add `openai` |
+| `src/api/routers/pipeline.py` | Multi-value params (cities, industries, keywords) |
+| `src/main.py` | Add CORS middleware, include pipeline and users routers |
+| `requirements.txt` | Add `litellm` |
 | `init_db.py` | Add test companies |
 
 ### Delete
@@ -440,10 +492,13 @@ app.add_middleware(
 ### Update Tests
 | File | Changes |
 |------|---------|
-| `tests/test_models.py` | Test new Company model, updated Job fields |
+| `tests/test_models.py` | Test new Company model, updated Job fields, UserSearch model |
 | `tests/test_api/test_jobs.py` | Test new endpoints |
 | `tests/test_api/test_applications.py` | Test JIT pattern, similarity_score |
-| `tests/test_services/test_job_discovery.py` | Test self-building logic |
+| `tests/test_api/test_companies.py` | Test multi-value params, resolve-url endpoint |
+| `tests/test_api/test_pipeline.py` | Test multi-value params |
+| `tests/test_api/test_users.py` | Test saved searches endpoints |
+| `tests/test_services/test_job_discovery.py` | Test self-building logic, two-step extraction |
 | `tests/conftest.py` | Add fixtures for Company model |
 
 ---
