@@ -1,7 +1,7 @@
 import pytest
 import os
 import uuid
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -59,7 +59,7 @@ def mock_discover_companies(query: str, exclude_companies=None):
     return []
 
 
-def mock_scrape_jobs(url: str):
+async def mock_scrape_jobs(url: str):
     from src.services.hybrid_extraction import ScrapedJobs, JobOpening
 
     return ScrapedJobs(
@@ -517,7 +517,7 @@ class TestPipelineSearchAndMatch:
 
 class TestResumesUpload:
     def test_upload_resume_with_pii_stripping(self, client, db):
-        user = create_jwt_user(db)
+        create_jwt_user(db)
 
         test_content = """
         RESUME

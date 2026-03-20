@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """
 Live Integration Tests - Actually call real APIs.
 
@@ -6,21 +7,20 @@ Run with: RUN_LIVE_TESTS=True pytest tests/e2e/test_live_integration.py -v --tb=
 WARNING: These tests consume API quota and require real API keys.
 """
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import os
-import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from src.main import app
 from src.database import Base, get_db
-from src.models import User, Company, Job, Resume, CompanySize, ApplicationStatus
+from src.models import User, Resume
 from src.api.deps import verify_jwt, check_rate_limit
 from src.config import settings
 
@@ -206,13 +206,14 @@ class TestLiveJobExtraction:
 
         assert ats_type == "workday", "Should detect Workday footprint"
 
-    def test_scrape_jobs_creates_embeddings(self):
+    @pytest.mark.anyio
+    async def test_scrape_jobs_creates_embeddings(self):
         """Test that job scraping works (uses Crawl4AI fallback)."""
         from src.services.hybrid_extraction import HybridExtractionService
 
         service = HybridExtractionService()
 
-        result = service.scrape_jobs("https://example.com/careers")
+        result = await service.scrape_jobs("https://example.com/careers")
         assert result is not None, "Scraping should return a result"
         assert hasattr(result, "jobs"), "Result should have jobs attribute"
 

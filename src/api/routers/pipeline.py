@@ -96,7 +96,7 @@ async def search_and_match(
 
     jobs_result = {"total_extracted": 0, "total_new": 0}
     if company_ids:
-        jobs_result = extraction_service.extract_jobs_for_companies(db, company_ids)
+        jobs_result = await extraction_service.extract_jobs_for_companies(db, company_ids)
 
     user = db.query(User).filter(User.id == request.user_id).first()
     if not user:

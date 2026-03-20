@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tests.conftest import TestingSessionLocal
 from src.models import UserSearch, User
 from src.services.job_discovery import CompanySearchResult

@@ -1,4 +1,5 @@
-from unittest.mock import patch
+import pytest
+from unittest.mock import patch, AsyncMock
 from src.services.hybrid_extraction import (
     HybridExtractionService,
     ScrapedJobs,
@@ -21,8 +22,9 @@ def test_check_ats_footprint():
     assert service.check_ats_footprint("https://custom-career-page.com/jobs") is None
 
 
+@pytest.mark.anyio
 @patch("src.services.hybrid_extraction.HybridExtractionService._extract_personio_jobs")
-def test_scrape_jobs_ats_fast_path(mock_extract):
+async def test_scrape_jobs_ats_fast_path(mock_extract):
     mock_extract.return_value = ScrapedJobs(
         jobs=[
             JobOpening(
@@ -32,17 +34,18 @@ def test_scrape_jobs_ats_fast_path(mock_extract):
     )
 
     service = HybridExtractionService()
-    result = service.scrape_jobs("https://jobs.personio.de/engineering")
+    result = await service.scrape_jobs("https://jobs.personio.de/engineering")
 
     assert len(result.jobs) == 1
     assert result.jobs[0].job_title == "Software Engineer"
     mock_extract.assert_called_once()
 
 
+@pytest.mark.anyio
 @patch(
     "src.services.hybrid_extraction.HybridExtractionService._extract_greenhouse_jobs"
 )
-def test_scrape_jobs_greenhouse(mock_extract):
+async def test_scrape_jobs_greenhouse(mock_extract):
     mock_extract.return_value = ScrapedJobs(
         jobs=[
             JobOpening(
@@ -53,16 +56,17 @@ def test_scrape_jobs_greenhouse(mock_extract):
     )
 
     service = HybridExtractionService()
-    result = service.scrape_jobs("https://boards.greenhouse.io/company/jobs")
+    result = await service.scrape_jobs("https://boards.greenhouse.io/company/jobs")
 
     assert len(result.jobs) == 1
     assert result.jobs[0].job_title == "DevOps Engineer"
     mock_extract.assert_called_once()
 
 
-@patch("src.services.hybrid_extraction.asyncio.run")
-def test_scrape_jobs_fallback(mock_run):
-    mock_run.return_value = ScrapedJobs(
+@pytest.mark.anyio
+@patch("src.services.hybrid_extraction.HybridExtractionService._crawl4ai_fallback", new_callable=AsyncMock)
+async def test_scrape_jobs_fallback(mock_fallback):
+    mock_fallback.return_value = ScrapedJobs(
         jobs=[
             JobOpening(
                 job_title="Custom Job", application_url="https://custom.com/job/1"
@@ -71,7 +75,7 @@ def test_scrape_jobs_fallback(mock_run):
     )
 
     service = HybridExtractionService()
-    result = service.scrape_jobs("https://custom-career-page.com/jobs")
+    result = await service.scrape_jobs("https://custom-career-page.com/jobs")
 
     assert len(result.jobs) == 1
     assert result.jobs[0].job_title == "Custom Job"

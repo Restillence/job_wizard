@@ -5,28 +5,12 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel
 from litellm import completion
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler  # type: ignore
 import httpx
 from sqlalchemy.orm import Session
 from src.config import settings
 from src.models import Job, Company
 from src.services.embeddings import generate_job_embedding, embedding_to_json
-
-
-def _run_async_safe(coro):
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop is not None:
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, coro)
-            return future.result()
-    else:
-        return asyncio.run(coro)
 
 
 class JobOpening(BaseModel):
@@ -199,7 +183,7 @@ class HybridExtractionService:
             except Exception:
                 return ScrapedJobs(jobs=[])
 
-    def scrape_jobs(self, url: str) -> ScrapedJobs:
+    async def scrape_jobs(self, url: str) -> ScrapedJobs:
         ats_type = self.check_ats_footprint(url)
 
         if ats_type == "personio":
@@ -210,7 +194,7 @@ class HybridExtractionService:
             return self._extract_workday_jobs(url)
         else:
             try:
-                return _run_async_safe(self._crawl4ai_fallback(url))
+                return await self._crawl4ai_fallback(url)
             except Exception:
                 return ScrapedJobs(jobs=[])
 
@@ -273,12 +257,12 @@ class HybridExtractionService:
 
         return jobs_list, newly_added, updated
 
-    def extract_and_save_jobs(
+    async def extract_and_save_jobs(
         self,
         db: Session,
         company: Company,
     ) -> ExtractionResult:
-        scraped_jobs = self.scrape_jobs(company.url)
+        scraped_jobs = await self.scrape_jobs(company.url)
         jobs, newly_added, updated = self.upsert_jobs(db, company, scraped_jobs)
 
         return ExtractionResult(
@@ -297,7 +281,7 @@ class HybridExtractionService:
             updated=updated,
         )
 
-    def extract_jobs_for_companies(
+    async def extract_jobs_for_companies(
         self,
         db: Session,
         company_ids: List[str],
@@ -312,7 +296,7 @@ class HybridExtractionService:
             if not company:
                 continue
 
-            result = self.extract_and_save_jobs(db, company)
+            result = await self.extract_and_save_jobs(db, company)
             results.append(
                 {
                     "company_id": company_id,

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 from src.database import get_db
 from sqlalchemy.orm import Session
@@ -176,7 +176,7 @@ async def extract_jobs(
         raise HTTPException(status_code=400, detail="company_ids is required")
 
     try:
-        result = extraction_service.extract_jobs_for_companies(db, request.company_ids)
+        result = await extraction_service.extract_jobs_for_companies(db, request.company_ids)
         return ExtractResponse(
             results=result["results"],
             total_extracted=result["total_extracted"],
