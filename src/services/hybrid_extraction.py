@@ -18,6 +18,7 @@ class JobOpening(BaseModel):
     application_url: str
     requirements: Optional[List[str]] = None
     description: Optional[str] = None
+    location: Optional[str] = None
 
 
 class ScrapedJobs(BaseModel):
@@ -72,6 +73,7 @@ class HybridExtractionService:
                             application_url=f"https://{company_slug}.jobs.personio.de/job/{job_data.get('id')}",
                             requirements=job_data.get("keywords", []),
                             description=job_data.get("short_description"),
+                            location=str(job_data.get("office", "")),
                         )
                     )
                 return ScrapedJobs(jobs=jobs)
@@ -102,6 +104,7 @@ class HybridExtractionService:
                             application_url=f"https://boards.greenhouse.io/{board_token}/jobs/{job_data.get('id')}",
                             requirements=[],
                             description=None,
+                            location=job_data.get("location", {}).get("name", ""),
                         )
                     )
                 return ScrapedJobs(jobs=jobs)
@@ -129,12 +132,14 @@ class HybridExtractionService:
                 for job_data in data.get("body", {}).get("children", []):
                     title = job_data.get("title", "Unknown")
                     external_url = job_data.get("externalUrl", url)
+                    location = job_data.get("locationsText", "")
                     jobs.append(
                         JobOpening(
                             job_title=title,
                             application_url=external_url,
                             requirements=[],
                             description=None,
+                            location=location,
                         )
                     )
                 return ScrapedJobs(jobs=jobs)
@@ -152,7 +157,7 @@ class HybridExtractionService:
 
             prompt = f"""
             Extract job titles and their application URLs from the following markdown text scraped from a career page.
-            Also extract a brief list of requirements if available.
+            Also extract a brief list of requirements if available, and the job location.
             
             Markdown Content:
             {markdown_content}
@@ -160,7 +165,7 @@ class HybridExtractionService:
             Return ONLY a valid JSON object matching this schema:
             {{
               "jobs": [
-                {{"job_title": "Software Engineer", "application_url": "https://...", "requirements": ["Python", "Docker"]}}
+                {{"job_title": "Software Engineer", "application_url": "https://...", "requirements": ["Python", "Docker"], "location": "Munich"}}
               ]
             }}
             Do not include markdown formatting like ```json.
@@ -203,6 +208,7 @@ class HybridExtractionService:
         db: Session,
         company: Company,
         scraped_jobs: ScrapedJobs,
+        target_cities: Optional[List[str]] = None,
     ) -> tuple[List[Job], int, int]:
         now = get_utc_now()
         newly_added = 0
@@ -212,6 +218,23 @@ class HybridExtractionService:
         for job_opening in scraped_jobs.jobs:
             if not job_opening.application_url:
                 continue
+
+            if target_cities:
+                location_str = (job_opening.location or "").lower()
+                title_str = job_opening.job_title.lower()
+                # Accept if any target city is in location or title, or if location indicates remote
+                valid_location = False
+                for city in target_cities:
+                    c_lower = city.lower()
+                    if c_lower in location_str or c_lower in title_str:
+                        valid_location = True
+                        break
+                if not valid_location and ("remote" in location_str or "remote" in title_str or "münchen" in location_str or "münchen" in title_str):
+                    valid_location = True
+                
+                if not valid_location:
+                    print(f"Discarding job '{job_opening.job_title}' at '{job_opening.location}' - does not match target cities {target_cities}")
+                    continue
 
             existing_job = (
                 db.query(Job)
@@ -261,9 +284,10 @@ class HybridExtractionService:
         self,
         db: Session,
         company: Company,
+        target_cities: Optional[List[str]] = None,
     ) -> ExtractionResult:
         scraped_jobs = await self.scrape_jobs(company.url)
-        jobs, newly_added, updated = self.upsert_jobs(db, company, scraped_jobs)
+        jobs, newly_added, updated = self.upsert_jobs(db, company, scraped_jobs, target_cities)
 
         return ExtractionResult(
             jobs=[
@@ -285,21 +309,37 @@ class HybridExtractionService:
         self,
         db: Session,
         company_ids: List[str],
+        target_cities: Optional[List[str]] = None,
     ) -> dict:
         results = []
         total_extracted = 0
         total_new = 0
         total_updated = 0
 
+        # Run extractions in parallel
+        tasks = []
+        companies = []
         for company_id in company_ids:
             company = db.query(Company).filter(Company.id == company_id).first()
-            if not company:
-                continue
+            if company:
+                companies.append(company)
+                tasks.append(self.extract_and_save_jobs(db, company, target_cities))
 
-            result = await self.extract_and_save_jobs(db, company)
+        if not tasks:
+            return {
+                "results": [],
+                "total_extracted": 0,
+                "total_new": 0,
+                "total_updated": 0,
+            }
+
+        extraction_results = await asyncio.gather(*tasks)
+
+        for i, result in enumerate(extraction_results):
+            company = companies[i]
             results.append(
                 {
-                    "company_id": company_id,
+                    "company_id": company.id,
                     "company_name": company.name,
                     "jobs": result.jobs,
                     "newly_added": result.newly_added,

@@ -143,7 +143,7 @@ async def discover_jobs(
             except ValueError:
                 pass
 
-        companies = discovery_service.discover_companies(
+        companies = await discovery_service.discover_companies(
             cities=request.cities,
             industries=request.industries,
             keywords=request.keywords,

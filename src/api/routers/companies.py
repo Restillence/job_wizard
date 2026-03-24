@@ -84,7 +84,7 @@ async def search_companies(
     - New companies are saved to DB automatically
     - Search is saved to user history if user_id provided (max 5 per user)
     """
-    result: CompanySearchResult = discovery_service.search_companies(
+    result: CompanySearchResult = await discovery_service.search_companies(
         db=db,
         user_id=user_id,
         cities=cities,
@@ -121,7 +121,7 @@ async def resolve_company_url(
 
     old_url = company.url
 
-    resolved_url = discovery_service.resolve_company_url_in_db(db, company_id)
+    resolved_url = await discovery_service.resolve_company_url_in_db(db, company_id)
 
     return ResolveUrlResponse(
         company_id=company_id,

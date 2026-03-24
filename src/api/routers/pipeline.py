@@ -83,7 +83,7 @@ async def search_and_match(
         except ValueError:
             company_size_enum = None
 
-    companies_result = discovery_service.search_companies(
+    companies_result = await discovery_service.search_companies(
         db=db,
         user_id=request.user_id,
         cities=request.cities,
