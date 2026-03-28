@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     # OpenAI API Key for Embeddings (optional fallback)
     OPENAI_API_KEY: Optional[str] = None
 
+    # Job Board API Keys
+    ARBEITSAGENTUR_API_KEY: str = "jobboerse-jobsuche"
+    ADZUNA_APP_ID: Optional[str] = None
+    ADZUNA_APP_KEY: Optional[str] = None
+    JOOBLE_API_KEY: Optional[str] = None
+    CAREERJET_AFFID: Optional[str] = None
+    CACHE_TTL_SECONDS: int = 3600
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     def validate_required_keys(self) -> list[str]:

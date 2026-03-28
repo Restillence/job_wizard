@@ -62,6 +62,9 @@ def cosine_similarity(embedding_a: List[float], embedding_b: List[float]) -> flo
     a = np.array(embedding_a)
     b = np.array(embedding_b)
 
+    if a.shape != b.shape:
+        return 0.0
+
     dot_product = np.dot(a, b)
     norm_a = np.linalg.norm(a)
     norm_b = np.linalg.norm(b)

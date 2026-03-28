@@ -1,0 +1,29 @@
+
+JOHN SMITH
+DATA SCIENTIST
+Email: john.smith@email.com
+LinkedIn: linkedin.com/in/johnsmith
+Phone: +49-123-4567890
+
+PROFESSIONAL SUMMARY
+Senior Data Scientist with 5+ years of experience in machine learning, statistical analysis, and data visualization. Expert in Python, TensorFlow, and cloud platforms (AWS, GCP). Passionate about transforming complex datasets into actionable insights.
+
+EXPERIENCE
+Senior Data Scientist | TechCorp GmbH | Berlin | 2021 - Present
+• Developed ML models for customer churn prediction (95% accuracy)
+• Built real-time recommendation system serving 1M+ users
+• Led data engineering team of 4 data scientists
+
+Data Scientist | Analytics Startup | Berlin | 2019 - 2021
+• Created NLP pipeline for sentiment analysis on social media data
+• Developed A/B testing framework increasing conversion by 23%
+
+EDUCATION
+M.Sc. Computer Science | Technical University Berlin | 2019
+B.Sc. Mathematics | University of Munich | 2017
+
+SKILLS
+Python, TensorFlow, PyTorch, Scikit-learn, SQL, Spark, AWS SageMaker, GCP Vertex AI, Docker, Kubernetes
+
+LANGUAGES
+English (Fluent), German (Native)

@@ -229,11 +229,18 @@ class HybridExtractionService:
                     if c_lower in location_str or c_lower in title_str:
                         valid_location = True
                         break
-                if not valid_location and ("remote" in location_str or "remote" in title_str or "münchen" in location_str or "münchen" in title_str):
+                if not valid_location and (
+                    "remote" in location_str
+                    or "remote" in title_str
+                    or "münchen" in location_str
+                    or "münchen" in title_str
+                ):
                     valid_location = True
-                
+
                 if not valid_location:
-                    print(f"Discarding job '{job_opening.job_title}' at '{job_opening.location}' - does not match target cities {target_cities}")
+                    print(
+                        f"Discarding job '{job_opening.job_title}' at '{job_opening.location}' - does not match target cities {target_cities}"
+                    )
                     continue
 
             existing_job = (
@@ -268,6 +275,8 @@ class HybridExtractionService:
                     is_active=True,
                     first_seen_at=now,
                     last_seen_at=now,
+                    source="company_scrape",
+                    sources=["company_scrape"],
                 )
                 db.add(new_job)
                 newly_added += 1
@@ -287,7 +296,9 @@ class HybridExtractionService:
         target_cities: Optional[List[str]] = None,
     ) -> ExtractionResult:
         scraped_jobs = await self.scrape_jobs(company.url)
-        jobs, newly_added, updated = self.upsert_jobs(db, company, scraped_jobs, target_cities)
+        jobs, newly_added, updated = self.upsert_jobs(
+            db, company, scraped_jobs, target_cities
+        )
 
         return ExtractionResult(
             jobs=[

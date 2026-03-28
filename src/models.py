@@ -72,7 +72,7 @@ class Job(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     company_id: Mapped[str] = mapped_column(String, ForeignKey("companies.id"))
-    source_url: Mapped[str] = mapped_column(String, unique=True, index=True)
+    source_url: Mapped[str] = mapped_column(String, index=True)
     title: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text)
     extracted_requirements: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -87,6 +87,34 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now
     )
+
+    source: Mapped[str] = mapped_column(String, default="company_scrape")
+    source_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    dedup_hash: Mapped[Optional[str]] = mapped_column(
+        String, unique=True, index=True, nullable=True
+    )
+    sources: Mapped[list[str]] = mapped_column(JSON, default=list)
+    location_city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    location_region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    location_country: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default="DE"
+    )
+    remote: Mapped[bool] = mapped_column(Boolean, default=False)
+    job_types: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    salary_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_currency: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default="EUR"
+    )
+    posted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    visa_sponsorship: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    raw_data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     company: Mapped["Company"] = relationship(back_populates="jobs")
 

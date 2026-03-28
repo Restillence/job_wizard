@@ -114,21 +114,45 @@ class TestJob:
         assert job.first_seen_at is not None
         assert job.last_seen_at is not None
 
-    def test_job_source_url_unique(self, db_session: Session) -> None:
+    def test_job_source_url_not_unique(self, db_session: Session) -> None:
         company = create_company(db_session)
         job1 = Job(
-            source_url="http://unique.com",
+            source_url="http://same-url.com",
             title="Dev",
             company_id=company.id,
             description="Desc",
+            dedup_hash="hash_a",
         )
         job2 = Job(
-            source_url="http://unique.com",
+            source_url="http://same-url.com",
             title="Dev2",
             company_id=company.id,
             description="Desc2",
+            dedup_hash="hash_b",
         )
         db_session.add_all([job1, job2])
+        db_session.commit()
+        assert job1.id != job2.id
+
+    def test_job_dedup_hash_unique(self, db_session: Session) -> None:
+        company = create_company(db_session)
+        job1 = Job(
+            source_url="http://first.com",
+            title="Dev",
+            company_id=company.id,
+            description="Desc",
+            dedup_hash="same_hash",
+        )
+        db_session.add(job1)
+        db_session.commit()
+        job2 = Job(
+            source_url="http://second.com",
+            title="Dev2",
+            company_id=company.id,
+            description="Desc2",
+            dedup_hash="same_hash",
+        )
+        db_session.add(job2)
         with pytest.raises(IntegrityError):
             db_session.commit()
 

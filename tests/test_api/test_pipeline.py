@@ -9,6 +9,10 @@ def test_search_and_match_success(client):
     db = TestingSessionLocal()
     user_id = "test_user_id"
 
+    db.query(Job).delete()
+    db.query(Resume).filter(Resume.user_id == user_id).delete()
+    db.commit()
+
     company = create_test_company(db, "Pipeline Test Co")
     job = Job(
         id=str(uuid.uuid4()),
@@ -16,7 +20,7 @@ def test_search_and_match_success(client):
         title="Senior Python Developer",
         company_id=company.id,
         description="Python, FastAPI, PostgreSQL",
-        embedding=[0.1] * 3072,
+        embedding="[0.1, 0.1, 0.1]",
         is_active=True,
     )
     db.add(job)
@@ -30,30 +34,12 @@ def test_search_and_match_success(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.1] * 3072,
+        embedding="[0.1, 0.1, 0.1]",
     )
     db.add(resume)
     db.commit()
 
-    with (
-        patch(
-            "src.api.routers.pipeline.discovery_service.search_companies"
-        ) as mock_search,
-        patch(
-            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
-        ) as mock_extract,
-    ):
-        mock_search.return_value = MagicMock(
-            companies=[{"id": company.id, "name": company.name, "url": company.url}],
-            total_found=1,
-            newly_added=0,
-            source="local",
-        )
-        mock_extract.return_value = {
-            "total_extracted": 1,
-            "total_new": 0,
-        }
-
+    with patch("src.api.routers.pipeline.search_all", return_value=[]):
         response = client.post(
             "/api/v1/pipeline/search-and-match",
             json={
@@ -66,8 +52,7 @@ def test_search_and_match_success(client):
 
     assert response.status_code == 200
     data = response.json()
-    assert data["companies_found"] == 1
-    assert data["jobs_extracted"] == 1
+    assert data["board_jobs_found"] == 0
     assert len(data["matched_jobs"]) == 1
     assert data["matched_jobs"][0]["title"] == "Senior Python Developer"
     assert data["matched_jobs"][0]["similarity_score"] > 0.99
@@ -83,27 +68,7 @@ def test_search_and_match_no_resume(client):
     db.query(Resume).filter(Resume.user_id == user_id).delete()
     db.commit()
 
-    company = create_test_company(db, "Pipeline No Resume Co")
-
-    with (
-        patch(
-            "src.api.routers.pipeline.discovery_service.search_companies"
-        ) as mock_search,
-        patch(
-            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
-        ) as mock_extract,
-    ):
-        mock_search.return_value = MagicMock(
-            companies=[{"id": company.id, "name": company.name, "url": company.url}],
-            total_found=1,
-            newly_added=0,
-            source="local",
-        )
-        mock_extract.return_value = {
-            "total_extracted": 0,
-            "total_new": 0,
-        }
-
+    with patch("src.api.routers.pipeline.search_all", return_value=[]):
         response = client.post(
             "/api/v1/pipeline/search-and-match",
             json={
@@ -133,18 +98,16 @@ def test_search_and_match_with_company_size(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.2] * 3072,
+        embedding="[0.2, 0.2, 0.2]",
     )
     db.add(resume)
     db.commit()
 
     with (
+        patch("src.api.routers.pipeline.search_all", return_value=[]),
         patch(
             "src.api.routers.pipeline.discovery_service.search_companies"
         ) as mock_search,
-        patch(
-            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
-        ) as mock_extract,
     ):
         mock_search.return_value = MagicMock(
             companies=[],
@@ -152,10 +115,6 @@ def test_search_and_match_with_company_size(client):
             newly_added=0,
             source="local",
         )
-        mock_extract.return_value = {
-            "total_extracted": 0,
-            "total_new": 0,
-        }
 
         response = client.post(
             "/api/v1/pipeline/search-and-match",
@@ -163,6 +122,7 @@ def test_search_and_match_with_company_size(client):
                 "company_size": "startup",
                 "user_id": user_id,
                 "top_k": 5,
+                "deep_search": True,
             },
         )
 
@@ -192,18 +152,16 @@ def test_search_and_match_with_keywords(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.3] * 3072,
+        embedding="[0.3, 0.3, 0.3]",
     )
     db.add(resume)
     db.commit()
 
     with (
+        patch("src.api.routers.pipeline.search_all", return_value=[]),
         patch(
             "src.api.routers.pipeline.discovery_service.search_companies"
         ) as mock_search,
-        patch(
-            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
-        ) as mock_extract,
     ):
         mock_search.return_value = MagicMock(
             companies=[],
@@ -211,10 +169,6 @@ def test_search_and_match_with_keywords(client):
             newly_added=0,
             source="local",
         )
-        mock_extract.return_value = {
-            "total_extracted": 0,
-            "total_new": 0,
-        }
 
         response = client.post(
             "/api/v1/pipeline/search-and-match",
@@ -222,6 +176,7 @@ def test_search_and_match_with_keywords(client):
                 "keywords": ["python", "django"],
                 "user_id": user_id,
                 "top_k": 10,
+                "deep_search": True,
             },
         )
 
@@ -248,18 +203,16 @@ def test_search_and_match_multiple_cities_industries(client):
         id=str(uuid.uuid4()),
         user_id=user_id,
         file_path=resume_file_path,
-        embedding=[0.4] * 3072,
+        embedding="[0.4, 0.4, 0.4]",
     )
     db.add(resume)
     db.commit()
 
     with (
+        patch("src.api.routers.pipeline.search_all", return_value=[]),
         patch(
             "src.api.routers.pipeline.discovery_service.search_companies"
         ) as mock_search,
-        patch(
-            "src.api.routers.pipeline.extraction_service.extract_jobs_for_companies"
-        ) as mock_extract,
     ):
         mock_search.return_value = MagicMock(
             companies=[],
@@ -267,10 +220,6 @@ def test_search_and_match_multiple_cities_industries(client):
             newly_added=0,
             source="local",
         )
-        mock_extract.return_value = {
-            "total_extracted": 0,
-            "total_new": 0,
-        }
 
         response = client.post(
             "/api/v1/pipeline/search-and-match",
@@ -280,6 +229,7 @@ def test_search_and_match_multiple_cities_industries(client):
                 "keywords": ["Python"],
                 "user_id": user_id,
                 "top_k": 10,
+                "deep_search": True,
             },
         )
 
