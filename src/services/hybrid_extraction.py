@@ -117,10 +117,8 @@ class HybridExtractionService:
             if "myworkdayjobs.com" not in url:
                 return ScrapedJobs(jobs=[])
 
-            api_url = (
-                url.rstrip("/")
-                + "/fs/searchPagination/318c8bb6f553100021d223d9780d30be/1"
-            )
+            base_url = url.rstrip("/")
+            api_url = f"{base_url}/wfp/career/careersection/alljobs/search"
 
             with httpx.Client(timeout=15) as client:
                 response = client.get(api_url)
@@ -230,10 +228,7 @@ class HybridExtractionService:
                         valid_location = True
                         break
                 if not valid_location and (
-                    "remote" in location_str
-                    or "remote" in title_str
-                    or "münchen" in location_str
-                    or "münchen" in title_str
+                    "remote" in location_str or "remote" in title_str
                 ):
                     valid_location = True
 

@@ -61,7 +61,10 @@ MIN_RESULTS_THRESHOLD_SPECIFIC = 5
 
 class JobDiscoveryService:
     async def _search_tavily(
-        self, client: httpx.AsyncClient, query: str, exclude_companies: Optional[List[str]] = None
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        exclude_companies: Optional[List[str]] = None,
     ) -> Optional[List[dict]]:
         if not settings.TAVILY_API_KEY:
             return None
@@ -81,7 +84,9 @@ class JobDiscoveryService:
                 "search_depth": "basic",
                 "max_results": 20,
             }
-            response = await client.post("https://api.tavily.com/search", json=data, timeout=15)
+            response = await client.post(
+                "https://api.tavily.com/search", json=data, timeout=15
+            )
             if response.status_code == 200:
                 res = response.json()
                 print("\n--- DEBUG: RAW TAVILY JSON RESPONSE ---")
@@ -101,7 +106,10 @@ class JobDiscoveryService:
         return None
 
     async def _search_serper(
-        self, client: httpx.AsyncClient, query: str, exclude_companies: Optional[List[str]] = None
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        exclude_companies: Optional[List[str]] = None,
     ) -> Optional[List[dict]]:
         if not settings.SERPER_API_KEY:
             return None
@@ -120,7 +128,12 @@ class JobDiscoveryService:
                 "Content-Type": "application/json",
             }
             data = {"q": search_query, "num": 20}
-            response = await client.post("https://google.serper.dev/search", headers=headers, json=data, timeout=15)
+            response = await client.post(
+                "https://google.serper.dev/search",
+                headers=headers,
+                json=data,
+                timeout=15,
+            )
             if response.status_code == 200:
                 res = response.json()
                 print("\n--- DEBUG: RAW SERPER JSON RESPONSE ---")
@@ -140,7 +153,10 @@ class JobDiscoveryService:
         return None
 
     async def _search_brave(
-        self, client: httpx.AsyncClient, query: str, exclude_companies: Optional[List[str]] = None
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        exclude_companies: Optional[List[str]] = None,
     ) -> Optional[List[dict]]:
         if not settings.BRAVE_API_KEY:
             return None
@@ -157,7 +173,12 @@ class JobDiscoveryService:
                 "X-Subscription-Token": settings.BRAVE_API_KEY,
             }
             params = {"q": search_query}
-            response = await client.get("https://api.search.brave.com/res/v1/web/search", headers=headers, params=params, timeout=15)
+            response = await client.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                headers=headers,
+                params=params,
+                timeout=15,
+            )
             if response.status_code == 200:
                 res = response.json()
                 results = res.get("web", {}).get("results", [])
@@ -186,23 +207,33 @@ class JobDiscoveryService:
 
             # DDGS is synchronous but we can run it in a thread
             loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(None, lambda: DDGS().text(search_query, max_results=20))
+            results = await loop.run_in_executor(
+                None, lambda: DDGS().text(search_query, max_results=20)
+            )
             return list(results)
         except Exception as e:
             print(f"DuckDuckGo search error: {e}")
             return []
 
-    async def _execute_search(self, client: httpx.AsyncClient, query: str, exclude_companies: Optional[List[str]] = None) -> List[dict]:
+    async def _execute_search(
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        exclude_companies: Optional[List[str]] = None,
+    ) -> List[dict]:
         """Execute search using available APIs (first successful wins)."""
         results = await self._search_tavily(client, query, exclude_companies)
-        if results: return results
-        
+        if results:
+            return results
+
         results = await self._search_serper(client, query, exclude_companies)
-        if results: return results
-        
+        if results:
+            return results
+
         results = await self._search_brave(client, query, exclude_companies)
-        if results: return results
-        
+        if results:
+            return results
+
         return await self._search_ddg(query, exclude_companies)
 
     def _build_search_query(
@@ -228,13 +259,13 @@ class JobDiscoveryService:
         # 1. Mandate career-specific keywords in the title or text
         career_terms = '("open positions" OR "vacancies" OR "careers" OR "karriere" OR "stellenangebote")'
         # 2. Aggressively exclude job boards, news, blogs, and forums
-        exclusions = '-site:linkedin.com -site:indeed.com -site:glassdoor.com -site:stepstone.de -site:xing.com -site:reddit.com -site:kununu.com -inurl:blog -inurl:news -inurl:press -inurl:article'
-        
+        exclusions = "-site:linkedin.com -site:indeed.com -site:glassdoor.com -site:stepstone.de -site:xing.com -site:reddit.com -site:kununu.com -inurl:blog -inurl:news -inurl:press -inurl:article"
+
         city_str = f'"{city}"' if city else ""
         industry_str = f'"{industry}"' if industry else ""
 
         # 3. Combine with our parameters
-        query = f'{city_str} {industry_str} {size} companies {career_terms} {exclusions}'.strip()
+        query = f"{city_str} {industry_str} {size} companies {career_terms} {exclusions}".strip()
         query = " ".join(query.split())
         return query
 
@@ -259,7 +290,7 @@ class JobDiscoveryService:
 
         async with httpx.AsyncClient() as client:
             tasks = []
-            
+
             if cities_list:
                 for city in cities_list:
                     query = self._build_search_query(
@@ -268,7 +299,17 @@ class JobDiscoveryService:
                         keywords=keywords_list,
                         company_size=company_size,
                     )
-                    tasks.append((query, {"city": city, "industry": industries_list[0] if industries_list else None}))
+                    tasks.append(
+                        (
+                            query,
+                            {
+                                "city": city,
+                                "industry": industries_list[0]
+                                if industries_list
+                                else None,
+                            },
+                        )
+                    )
             elif industries_list:
                 for industry in industries_list:
                     query = self._build_search_query(
@@ -288,7 +329,9 @@ class JobDiscoveryService:
                 tasks.append((query, {"city": None, "industry": None}))
 
             # Run search queries in parallel
-            search_jobs = [self._execute_search(client, t[0], exclude_companies) for t in tasks]
+            search_jobs = [
+                self._execute_search(client, t[0], exclude_companies) for t in tasks
+            ]
             results_batches = await asyncio.gather(*search_jobs)
 
             for i, batch in enumerate(results_batches):
@@ -307,7 +350,9 @@ class JobDiscoveryService:
         url_lower = url.lower()
         return any(agg in url_lower for agg in AGGREGATOR_DOMAINS)
 
-    async def _extract_company_names(self, search_results: List[dict]) -> List[Dict[str, Any]]:
+    async def _extract_company_names(
+        self, search_results: List[dict]
+    ) -> List[Dict[str, Any]]:
         """
         Use LLM to extract company names from search results.
         Returns list of dicts with company_name and context.
@@ -319,14 +364,18 @@ class JobDiscoveryService:
         # We keep the context for each search result
         search_context = []
         for r in search_results[:30]:
-            search_context.append({
-                "title": r.get("title"),
-                "url": r.get("href"),
-                "snippet": r.get("body"),
-                "context": r.get("context")
-            })
+            search_context.append(
+                {
+                    "title": r.get("title"),
+                    "url": r.get("href"),
+                    "snippet": r.get("body"),
+                    "context": r.get("context"),
+                }
+            )
 
-        print(f"\n--- DEBUG: RAW SEARCH RESULTS (All {len(search_context)}) BEFORE LLM ---")
+        print(
+            f"\n--- DEBUG: RAW SEARCH RESULTS (All {len(search_context)}) BEFORE LLM ---"
+        )
         print(json.dumps(search_context, indent=2))
         print("-------------------------------------------\n")
 
@@ -376,16 +425,17 @@ Search Results:
                 name = item.get("name")
                 idx = item.get("context_index")
                 if name and idx is not None and idx < len(search_context):
-                    extracted.append({
-                        "name": name,
-                        "context": search_context[idx]["context"]
-                    })
+                    extracted.append(
+                        {"name": name, "context": search_context[idx]["context"]}
+                    )
             return extracted[:MAX_COMPANY_NAMES]
         except Exception as e:
             print(f"Failed to extract company names: {e}")
             return []
 
-    async def _predict_career_urls(self, extracted_companies: List[Dict[str, Any]]) -> List[Company]:
+    async def _predict_career_urls(
+        self, extracted_companies: List[Dict[str, Any]]
+    ) -> List[Company]:
         """
         Use LLM to batch predict career page URLs for company names.
         """
@@ -395,13 +445,17 @@ Search Results:
 
         companies_data = []
         for item in extracted_companies:
-            companies_data.append({
-                "name": item["name"],
-                "city": item["context"]["city"],
-                "industry": item["context"]["industry"]
-            })
+            companies_data.append(
+                {
+                    "name": item["name"],
+                    "city": item["context"]["city"],
+                    "industry": item["context"]["industry"],
+                }
+            )
 
-        print(f"\n--- DEBUG: COMPANIES FOR URL PREDICTION (All {len(companies_data)}) BEFORE LLM ---")
+        print(
+            f"\n--- DEBUG: COMPANIES FOR URL PREDICTION (All {len(companies_data)}) BEFORE LLM ---"
+        )
         print(json.dumps(companies_data, indent=2))
         print("-------------------------------------------\n")
 
@@ -460,12 +514,16 @@ Companies:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
-            response = await client.head(url, headers=headers, timeout=8, follow_redirects=True)
+            response = await client.head(
+                url, headers=headers, timeout=8, follow_redirects=True
+            )
             if response.status_code == 200:
                 return True
             if response.status_code in [403, 405]:
                 # Some sites block HEAD or return 403 for it, try GET
-                response = await client.get(url, headers=headers, timeout=8, follow_redirects=True)
+                response = await client.get(
+                    url, headers=headers, timeout=8, follow_redirects=True
+                )
                 return response.status_code == 200
             return False
         except Exception:
@@ -601,7 +659,7 @@ Companies:
                     CompanyModel.name.ilike(f"%{kw}%"),
                     CompanyModel.industry.ilike(f"%{kw}%"),
                     CompanyModel.city.ilike(f"%{kw}%"),
-                    CompanyModel.industry.ilike(f"%{kw}%"),
+                    CompanyModel.url.ilike(f"%{kw}%"),
                 )
                 for kw in keywords
             ]
@@ -626,7 +684,12 @@ Companies:
             else MIN_RESULTS_THRESHOLD_BROAD
         )
 
-    def _save_companies_to_db(self, db: Session, companies: List[Company], company_size: Optional[CompanySize] = None) -> int:
+    def _save_companies_to_db(
+        self,
+        db: Session,
+        companies: List[Company],
+        company_size: Optional[CompanySize] = None,
+    ) -> int:
         saved_count = 0
         for company in companies:
             existing = (
@@ -642,7 +705,7 @@ Companies:
                     url_verified=company.url_verified,
                     city=company.city,
                     industry=company.industry,
-                    company_size=company_size
+                    company_size=company_size,
                 )
                 db.add(db_company)
                 saved_count += 1
@@ -824,7 +887,9 @@ Companies:
             for s in searches
         ]
 
-    async def resolve_company_url_in_db(self, db: Session, company_id: str) -> Optional[str]:
+    async def resolve_company_url_in_db(
+        self, db: Session, company_id: str
+    ) -> Optional[str]:
         """
         Resolve and update career URL for a company in the database.
         Returns the resolved URL or None if resolution failed.

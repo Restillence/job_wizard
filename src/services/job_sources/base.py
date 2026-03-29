@@ -36,8 +36,7 @@ class NormalizedJob(BaseModel):
     raw_data: Optional[Dict[str, Any]] = None
 
     def model_post_init(self, __context: Any) -> None:
-        if not self.location_country:
-            self.location_country = "DE"
+        pass
 
     @property
     def dedup_hash(self) -> str:

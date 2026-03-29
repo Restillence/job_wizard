@@ -1,12 +1,20 @@
+import re as _re
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from src.services.job_sources.base import BaseJobSource, NormalizedJob, SearchParams
 
+_COUNTRY_MAP = {
+    "DE": ["germany", "deutschland", "de"],
+    "AT": ["austria", "österreich", "oesterreich", "at"],
+    "CH": ["switzerland", "schweiz", "suisse", "ch"],
+}
+
 
 class ArbeitnowSource(BaseJobSource):
     API_URL = "https://www.arbeitnow.com/api/job-board-api"
+    MAX_PAGES = 5
 
     @property
     def name(self) -> str:
@@ -18,58 +26,100 @@ class ArbeitnowSource(BaseJobSource):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
     def fetch(self, params: SearchParams) -> List[NormalizedJob]:
+        all_parsed: List[NormalizedJob] = []
+
+        for page in range(params.page, params.page + self.MAX_PAGES):
+            try:
+                with httpx.Client(timeout=20) as client:
+                    response = client.get(
+                        self.API_URL,
+                        params={"page": page, "per_page": params.per_page},
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+            except Exception as e:
+                print(f"Arbeitnow API error: {e}")
+                break
+
+            raw_jobs = data.get("data", [])
+            if not raw_jobs:
+                break
+
+            for item in raw_jobs:
+                try:
+                    job = self._parse_single(item)
+                    if job and self._matches(job, params):
+                        all_parsed.append(job)
+                except Exception as e:
+                    print(f"Arbeitnow parse error: {e}")
+                    continue
+
+            has_filters = (
+                params.query or params.keywords or params.city or params.country
+            )
+            if not has_filters:
+                break
+
+            if len(all_parsed) >= params.per_page:
+                break
+
+        return all_parsed
+
+    @staticmethod
+    def _matches(job: NormalizedJob, params: SearchParams) -> bool:
+        if not ArbeitnowSource._matches_country(job, params):
+            return False
+        if not ArbeitnowSource._matches_city(job, params):
+            return False
+        if not ArbeitnowSource._matches_text(job, params):
+            return False
+        return True
+
+    @staticmethod
+    def _matches_country(job: NormalizedJob, params: SearchParams) -> bool:
+        if not params.country:
+            return True
+        target = params.country.upper()
+        allowed = _COUNTRY_MAP.get(target, [target.lower()])
+        job_location = (job.location_city or "").lower()
+        job_country = (job.location_country or "").lower()
+        if job_country and job_country == target.lower():
+            return True
+        if job_country and job_country != target.lower():
+            return False
+        for keyword in allowed:
+            pattern = _re.compile(r"\b" + _re.escape(keyword) + r"\b", _re.IGNORECASE)
+            if pattern.search(job_location):
+                return True
+        return False
+
+    @staticmethod
+    def _matches_city(job: NormalizedJob, params: SearchParams) -> bool:
+        if not params.city:
+            return True
+        city_lower = params.city.lower()
+        job_location = (job.location_city or "").lower()
+        return city_lower in job_location
+
+    @staticmethod
+    def _matches_text(job: NormalizedJob, params: SearchParams) -> bool:
         query_parts: List[str] = []
         if params.query:
             query_parts.append(params.query)
         if params.keywords:
             query_parts.extend(params.keywords)
-        search_text = " ".join(query_parts) if query_parts else ""
+        if not query_parts:
+            return True
+        search_text = " ".join(query_parts).lower()
+        title = (job.title or "").lower()
+        description = (job.description or "").lower()
+        combined = f"{title} {description}"
+        for word in _re.findall(r"\w+", search_text):
+            if word in combined:
+                return True
+        return False
 
-        api_params: Dict[str, Any] = {
-            "page": params.page,
-            "per_page": params.per_page,
-        }
-
-        if search_text:
-            api_params["search"] = search_text
-        if params.city:
-            api_params["location"] = params.city
-        if params.country:
-            api_params["country"] = params.country
-
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.get(self.API_URL, params=api_params)
-                response.raise_for_status()
-                data = response.json()
-        except Exception as e:
-            print(f"Arbeitnow API error: {e}")
-            return []
-
-        return self._parse_results(data, params)
-
-    def _parse_results(
-        self, data: Dict[str, Any], params: SearchParams
-    ) -> List[NormalizedJob]:
-        jobs: List[NormalizedJob] = []
-        raw_jobs = data.get("data", [])
-        if not raw_jobs:
-            return jobs
-
-        for item in raw_jobs:
-            try:
-                job = self._parse_single(item, params)
-                if job:
-                    jobs.append(job)
-            except Exception as e:
-                print(f"Arbeitnow parse error: {e}")
-                continue
-
-        return jobs
-
-    def _parse_single(
-        self, item: Dict[str, Any], params: SearchParams
-    ) -> Optional[NormalizedJob]:
+    def _parse_single(self, item: Dict[str, Any]) -> Optional[NormalizedJob]:
         slug = item.get("slug", "")
         source_url = item.get("url", "")
         if not source_url and slug:
@@ -86,7 +136,7 @@ class ArbeitnowSource(BaseJobSource):
             return None
 
         city = item.get("location", "") or ""
-        country_code = item.get("country_code", params.country) or params.country
+        country_code = item.get("country_code") or ""
 
         description = item.get("description", "")
 

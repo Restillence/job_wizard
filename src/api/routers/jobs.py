@@ -12,12 +12,14 @@ from src.services.embeddings import (
     json_to_embedding,
     generate_resume_embedding,
     embedding_to_json,
+    generate_job_embedding,
 )
 from src.models import Job, Resume, User
 from src.services.job_sources import search_all
 from src.services.job_sources.base import SearchParams, NormalizedJob
 from src.services.job_sources.company_resolver import resolve_or_create_company
 from src.services.job_sources.dedup import merge_job_data
+from src.services.job_sources.arbeitsagentur import ArbeitsagenturSource
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 discovery_service = JobDiscoveryService()
@@ -183,6 +185,14 @@ def _upsert_job_board_jobs(
                 last_seen_at=now,
             )
             db.add(new_job)
+            if new_job.description:
+                emb = generate_job_embedding(
+                    title=new_job.title,
+                    description=new_job.description,
+                    requirements={},
+                )
+                if emb:
+                    new_job.embedding = embedding_to_json(emb)
             newly_added += 1
             jobs_list.append(new_job)
 
@@ -207,7 +217,8 @@ async def search_job_boards(
     - Queries multiple job boards in parallel
     - Deduplicates results by content fingerprint
     - Auto-creates company records from job data
-    - No embeddings generated (JIT in pipeline matching)
+    - Enriches jobs with full descriptions from detail pages
+    - Generates embeddings for new jobs with descriptions
     """
     params = SearchParams(
         query=request.query,
@@ -225,6 +236,9 @@ async def search_job_boards(
 
     if not normalized_jobs:
         return SearchBoardsResponse(jobs=[], total_found=0, newly_added=0, updated=0)
+
+    arbeitsagentur = ArbeitsagenturSource()
+    normalized_jobs = arbeitsagentur.enrich_jobs(normalized_jobs)
 
     try:
         jobs_list, newly_added, updated = _upsert_job_board_jobs(db, normalized_jobs)

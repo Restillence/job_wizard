@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
 
     # Job Board API Keys
-    ARBEITSAGENTUR_API_KEY: str = "jobboerse-jobsuche"
     ADZUNA_APP_ID: Optional[str] = None
     ADZUNA_APP_KEY: Optional[str] = None
     JOOBLE_API_KEY: Optional[str] = None
