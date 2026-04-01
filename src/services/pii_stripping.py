@@ -1,5 +1,4 @@
-import litellm
-from src.config import settings
+from src.services.llm_utils import call_llm
 
 
 class PIIStrippingService:
@@ -11,12 +10,4 @@ class PIIStrippingService:
             "Return ONLY the redacted text. Do not include any explanations or other text.\n\n"
             f"Text: {text}"
         )
-        response = litellm.completion(
-            model="openai/glm-5",
-            messages=[{"role": "user", "content": prompt}],
-            api_base=settings.ZAI_API_BASE,
-            api_key=settings.ZAI_API_KEY,
-        )
-        # Type hint for response.choices[0].message.content is tricky,
-        # but litellm returns a ModelResponse object
-        return str(response.choices[0].message.content).strip()
+        return call_llm([{"role": "user", "content": prompt}])

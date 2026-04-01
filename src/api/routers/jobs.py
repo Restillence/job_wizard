@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
@@ -6,7 +7,11 @@ from src.database import get_db
 from sqlalchemy.orm import Session
 from src.api.deps import verify_jwt, check_rate_limit
 from src.services.job_discovery import JobDiscoveryService, Company, CompanySize
-from src.services.hybrid_extraction import HybridExtractionService
+from src.services.hybrid_extraction import (
+    HybridExtractionService,
+    ScrapedJobs,
+    JobOpening,
+)
 from src.services.embeddings import (
     cosine_similarity,
     json_to_embedding,
@@ -14,12 +19,13 @@ from src.services.embeddings import (
     embedding_to_json,
     generate_job_embedding,
 )
-from src.models import Job, Resume, User
+from src.models import Job, Resume, User, Company as CompanyModel
 from src.services.job_sources import search_all
 from src.services.job_sources.base import SearchParams, NormalizedJob
 from src.services.job_sources.company_resolver import resolve_or_create_company
 from src.services.job_sources.dedup import merge_job_data
 from src.services.job_sources.arbeitsagentur import ArbeitsagenturSource
+
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 discovery_service = JobDiscoveryService()
@@ -354,6 +360,75 @@ class MatchResponse(BaseModel):
     total_matches: int
 
 
+class AddJobRequest(BaseModel):
+    url: Optional[str] = Field(
+        None,
+        description="Direct URL to the job posting page. Works best with company career pages.",
+    )
+    raw_text: Optional[str] = Field(
+        None,
+        description="Pasted job description text. Use when URL scraping fails or for aggregator sites (Indeed, Stepstone, etc.).",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "summary": "By URL (company career page)",
+                    "value": {
+                        "url": "https://careers.company.com/jobs/123",
+                    },
+                },
+                {
+                    "summary": "By pasted text (for aggregator sites)",
+                    "value": {
+                        "raw_text": "Senior Python Developer at TechCorp...",
+                    },
+                },
+                {
+                    "summary": "URL + text fallback",
+                    "value": {
+                        "url": "https://de.indeed.com/viewjob?jk=abc",
+                        "raw_text": "Job title: Senior Python Developer\nCompany: TechCorp\n...",
+                    },
+                },
+            ]
+        }
+    }
+
+
+class AddJobResponse(BaseModel):
+    job_id: str
+    title: str
+    company_name: str
+    company_id: str
+    location: Optional[str] = None
+    description: Optional[str] = None
+    source: str
+    is_new: bool
+
+
+_AGGREGATOR_DOMAINS = {
+    "indeed.com",
+    "stepstone.de",
+    "linkedin.com",
+    "glassdoor.com",
+    "xing.com",
+    "karriere.at",
+    "monster.com",
+    "monster.de",
+    "arbeitsagentur.de",
+    "jobware.de",
+    "jobscout24.de",
+    "stellenanzeigen.de",
+}
+
+
+def _is_aggregator(hostname: str) -> bool:
+    host_lower = hostname.lower()
+    return any(domain in host_lower for domain in _AGGREGATOR_DOMAINS)
+
+
 @router.post("/discover", response_model=DiscoverResponse)
 async def discover_jobs(
     request: DiscoverRequest = Body(
@@ -382,13 +457,6 @@ async def discover_jobs(
     user_info: dict = Depends(verify_jwt),
     _rate_limit: bool = Depends(check_rate_limit),
 ):
-    """
-    Discover companies with career pages using structured search.
-
-    - Uses two-step extraction: finds company names, predicts career URLs
-    - Filters out job aggregators (LinkedIn, Indeed, etc.)
-    - Validates URLs with HEAD requests
-    """
     try:
         company_size_enum = None
         if request.company_size:
@@ -419,13 +487,6 @@ async def extract_jobs(
     user_info: dict = Depends(verify_jwt),
     _rate_limit: bool = Depends(check_rate_limit),
 ):
-    """
-    Extract jobs from specified company career pages.
-
-    - Checks for ATS footprints (Personio, Workday, Greenhouse) for fast extraction
-    - Falls back to Crawl4AI for custom sites
-    - Upserts jobs: updates existing, adds new with embeddings
-    """
     if not request.company_ids:
         raise HTTPException(status_code=400, detail="company_ids is required")
 
@@ -443,6 +504,171 @@ async def extract_jobs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post(
+    "/add",
+    response_model=AddJobResponse,
+    summary="Add a job by URL or pasted text",
+    description=(
+        "Add a job by URL (auto-scraped) or by pasted text. "
+        "**URL scraping works best with direct company career pages** "
+        "(e.g. company.com/careers/job/123). "
+        "Aggregator sites like Indeed, Stepstone, and LinkedIn block automated access — "
+        "for these, paste the job description text instead. "
+        "You can provide both URL + text: the URL will be tried first, and text used as fallback."
+    ),
+)
+async def add_job(
+    request: AddJobRequest = Body(...),
+    db: Session = Depends(get_db),
+    user_info: dict = Depends(verify_jwt),
+    _rate_limit: bool = Depends(check_rate_limit),
+):
+    from urllib.parse import urlparse
+
+    if not request.url and not request.raw_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one of 'url' or 'raw_text'.",
+        )
+
+    job_opening: Optional[JobOpening] = None
+    source_url: Optional[str] = request.url
+
+    if request.url:
+        parsed_url = urlparse(request.url)
+        is_agg = _is_aggregator(parsed_url.hostname or "")
+
+        if is_agg:
+            if not request.raw_text:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"The site '{parsed_url.hostname}' is a job aggregator that blocks automated scraping. "
+                        "Please paste the job description text in 'raw_text' and try again."
+                    ),
+                )
+        else:
+            try:
+                scraped = await extraction_service.scrape_jobs(request.url)
+                if scraped.jobs:
+                    job_opening = scraped.jobs[0]
+                else:
+                    single_job = await extraction_service.scrape_single_job(request.url)
+                    if single_job:
+                        job_opening = single_job
+            except Exception:
+                pass
+
+    if not job_opening and request.raw_text:
+        try:
+            job_opening = await extraction_service.extract_from_raw_text(
+                request.raw_text, source_url=request.url
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=502, detail=f"Failed to extract job from text: {e}"
+            )
+
+    if not job_opening:
+        if request.url and not request.raw_text:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Could not extract any jobs from the provided URL. "
+                    "Try pasting the job description text in 'raw_text' instead."
+                ),
+            )
+        raise HTTPException(status_code=502, detail="Could not extract any job data.")
+
+    if not job_opening.application_url:
+        if source_url:
+            job_opening.application_url = source_url
+        else:
+            slug = re.sub(r"[^a-z0-9]+", "-", job_opening.job_title.lower()).strip("-")
+            job_opening.application_url = f"manual://{slug}"
+
+    existing_job = (
+        db.query(Job).filter(Job.source_url == job_opening.application_url).first()
+    )
+
+    if existing_job:
+        existing_job.last_seen_at = _get_utc_now()
+        existing_job.is_active = True
+        if job_opening.description:
+            existing_job.description = job_opening.description
+        db.commit()
+        db.refresh(existing_job)
+
+        return AddJobResponse(
+            job_id=existing_job.id,
+            title=existing_job.title,
+            company_name=existing_job.company.name
+            if existing_job.company
+            else "Unknown",
+            company_id=existing_job.company_id,
+            location=existing_job.location_city,
+            description=existing_job.description or "",
+            source=existing_job.source,
+            is_new=False,
+        )
+
+    company_name = (
+        job_opening.company_name
+        or (urlparse(request.url).hostname if request.url else None)
+        or "Unknown"
+    )
+
+    existing_company = (
+        db.query(CompanyModel).filter(CompanyModel.name == company_name).first()
+    )
+    if existing_company:
+        company = existing_company
+    else:
+        company = CompanyModel(
+            name=company_name,
+            url=request.url or "",
+            url_verified=False,
+        )
+        db.add(company)
+        db.flush()
+
+    embedding = generate_job_embedding(
+        title=job_opening.job_title,
+        description=job_opening.description or "",
+        requirements={"requirements": job_opening.requirements or []},
+    )
+
+    now = _get_utc_now()
+    new_job = Job(
+        company_id=company.id,
+        source_url=job_opening.application_url,
+        title=job_opening.job_title,
+        description=job_opening.description or "",
+        extracted_requirements={"requirements": job_opening.requirements or []},
+        embedding=embedding_to_json(embedding),
+        is_active=True,
+        first_seen_at=now,
+        last_seen_at=now,
+        source="manual_url" if request.url else "manual_text",
+        sources=["manual_url" if request.url else "manual_text"],
+        location_city=job_opening.location,
+    )
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+
+    return AddJobResponse(
+        job_id=new_job.id,
+        title=new_job.title,
+        company_name=company.name,
+        company_id=company.id,
+        location=job_opening.location,
+        description=new_job.description or "",
+        source=new_job.source,
+        is_new=True,
+    )
+
+
 @router.post("/match", response_model=MatchResponse)
 async def match_jobs(
     request: MatchRequest = Body(...),
@@ -450,13 +676,6 @@ async def match_jobs(
     user_info: dict = Depends(verify_jwt),
     _rate_limit: bool = Depends(check_rate_limit),
 ):
-    """
-    Vector match user profile against jobs using cosine similarity.
-
-    - Gets user's resume embedding (generates if needed)
-    - Computes similarity against job embeddings
-    - Returns ranked job list (no text generation yet - JIT pattern)
-    """
     user = db.query(User).filter(User.id == request.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

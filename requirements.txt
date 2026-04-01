@@ -15,3 +15,5 @@ openai
 ruff
 mypy
 tenacity
+pymupdf
+python-docx

@@ -1,7 +1,8 @@
 import json
-from litellm import completion
+import re
 from src.config import settings
 from src.models import Job
+from src.services.llm_utils import call_llm
 
 
 class CoverLetterService:
@@ -31,17 +32,9 @@ class CoverLetterService:
         Do not include markdown formatting like ```json.
         """
 
-        response = completion(
-            model="openai/glm-5",
-            api_base=settings.ZAI_API_BASE,
-            api_key=settings.ZAI_API_KEY,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw_json = response.choices[0].message.content.strip()
+        raw_json = call_llm([{"role": "user", "content": prompt}])
 
         if raw_json.startswith("```"):
-            import re
-
             raw_json = re.sub(r"^```(?:json)?\n|\n```$", "", raw_json)
 
         try:

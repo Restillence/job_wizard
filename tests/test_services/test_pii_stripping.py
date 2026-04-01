@@ -17,5 +17,5 @@ def test_strip_pii(mock_completion: MagicMock) -> None:
 
     # Verify call parameters
     args, kwargs = mock_completion.call_args
-    assert kwargs["model"] == "openai/glm-5"
+    assert kwargs["model"] == "openai/glm-5.1"
     assert "John" in kwargs["messages"][0]["content"]

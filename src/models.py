@@ -125,6 +125,7 @@ class Resume(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
     file_path: Mapped[str] = mapped_column(String)
+    original_file_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     embedding: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=get_utc_now

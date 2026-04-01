@@ -1,21 +1,71 @@
 import asyncio
+import os
 import re
+import sys
 import json
 from datetime import datetime, timezone
 from typing import List, Optional
+
+if sys.platform == "win32" and sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+
 from pydantic import BaseModel
-from litellm import completion
+
 from crawl4ai import AsyncWebCrawler  # type: ignore
+from crawl4ai.async_configs import CrawlerRunConfig  # type: ignore
 import httpx
 from sqlalchemy.orm import Session
 from src.config import settings
 from src.models import Job, Company
 from src.services.embeddings import generate_job_embedding, embedding_to_json
+from src.services.llm_utils import call_llm
+
+_JOB_LISTING_CONFIG = CrawlerRunConfig(
+    word_count_threshold=10,
+    excluded_tags=["nav", "footer", "header", "aside", "form", "noscript"],
+    excluded_selector=".cookie-banner, .sidebar, .related-jobs, .recommendations, .similar-jobs, [role='navigation'], [role='banner'], [role='contentinfo']",
+    remove_overlay_elements=True,
+    remove_forms=True,
+    only_text=True,
+    exclude_external_links=True,
+    exclude_social_media_links=True,
+)
+
+_SINGLE_JOB_CONFIG = CrawlerRunConfig(
+    word_count_threshold=10,
+    excluded_tags=["nav", "footer", "header", "aside", "form", "noscript"],
+    excluded_selector=".cookie-banner, .sidebar, .related-jobs, .recommendations, .similar-jobs, [role='navigation'], [role='banner'], [role='contentinfo']",
+    remove_overlay_elements=True,
+    remove_forms=True,
+    only_text=True,
+    exclude_external_links=True,
+    exclude_social_media_links=True,
+)
+
+_NOISE_PATTERNS = re.compile(
+    r"(?mi)^.*\b(cookie|consent|privacy|datenschutz|impressum|newsletter|abonn|anmelden|registrier|sign[\s_-]?up|log[\s_-]?in|subscribe|newsletter|tracking|werbung|advertisement)\b.*$"
+)
+_IMG_PATTERN = re.compile(r"!\[[^\]]*\]\([^\)]+\)")
+_LINK_ONLY_PATTERN = re.compile(r"^\[([^\]]*)\]\([^\)]+\)$", re.MULTILINE)
+
+
+def _clean_markdown(md: str, max_chars: int = 8000) -> str:
+    md = _IMG_PATTERN.sub("", md)
+    md = _LINK_ONLY_PATTERN.sub(r"\1", md)
+    md = _NOISE_PATTERNS.sub("", md)
+    md = re.sub(r"\n{3,}", "\n\n", md)
+    md = md.strip()
+    if len(md) > max_chars:
+        md = md[:max_chars]
+    return md
 
 
 class JobOpening(BaseModel):
     job_title: str
     application_url: str
+    company_name: Optional[str] = None
     requirements: Optional[List[str]] = None
     description: Optional[str] = None
     location: Optional[str] = None
@@ -146,36 +196,39 @@ class HybridExtractionService:
             return ScrapedJobs(jobs=[])
 
     async def _crawl4ai_fallback(self, url: str) -> ScrapedJobs:
-        async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url=url)
-            markdown_content = result.markdown
-
-            if len(markdown_content) > 15000:
-                markdown_content = markdown_content[:15000]
+        async with AsyncWebCrawler(verbose=False) as crawler:
+            result = await crawler.arun(url=url, crawler_config=_JOB_LISTING_CONFIG)
+            markdown_content = _clean_markdown(result.markdown, max_chars=12000)
 
             prompt = f"""
-            Extract job titles and their application URLs from the following markdown text scraped from a career page.
-            Also extract a brief list of requirements if available, and the job location.
-            
+            Extract job postings from the following markdown text scraped from a career page.
+            For each job, extract:
+            - job_title: The job title
+            - application_url: Direct URL to apply or view the job (use the original source URL if none found)
+            - company_name: The name of the hiring company (NOT the job board domain)
+            - requirements: List of required skills/qualifications
+            - description: Full job description including responsibilities and qualifications
+            - location: Job location (city, country)
+
             Markdown Content:
             {markdown_content}
-            
+
             Return ONLY a valid JSON object matching this schema:
             {{
               "jobs": [
-                {{"job_title": "Software Engineer", "application_url": "https://...", "requirements": ["Python", "Docker"], "location": "Munich"}}
+                {{"job_title": "Software Engineer", "application_url": "https://...", "company_name": "TechCorp", "requirements": ["Python", "Docker"], "description": "Full description...", "location": "Munich"}}
               ]
             }}
             Do not include markdown formatting like ```json.
             """
 
-            response = completion(
-                model="openai/glm-5",
-                api_base=settings.ZAI_API_BASE,
-                api_key=settings.ZAI_API_KEY,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw_json = response.choices[0].message.content.strip()
+            try:
+                raw_json = call_llm(
+                    [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+                )
+            except Exception as e:
+                print(f"LLM call failed in _crawl4ai_fallback: {e}")
+                return ScrapedJobs(jobs=[])
 
             if raw_json.startswith("```"):
                 raw_json = re.sub(r"^```(?:json)?\n|\n```$", "", raw_json)
@@ -185,6 +238,115 @@ class HybridExtractionService:
                 return ScrapedJobs.model_validate(parsed_data)
             except Exception:
                 return ScrapedJobs(jobs=[])
+
+    async def scrape_single_job(self, url: str) -> Optional[JobOpening]:
+        async with AsyncWebCrawler(verbose=False) as crawler:
+            result = await crawler.arun(url=url, crawler_config=_SINGLE_JOB_CONFIG)
+            markdown_content = _clean_markdown(result.markdown, max_chars=8000)
+
+            prompt = f"""
+            Extract the full job posting details from the following page content.
+            This is a SINGLE job posting page, not a job listing page.
+
+            Extract ALL of the following:
+            - job_title: The exact job title
+            - application_url: The URL to apply (use the page URL if none found)
+            - company_name: The name of the hiring company (NOT the job board domain like indeed.com)
+            - requirements: Full list of required skills, qualifications, and experience
+            - description: The COMPLETE job description including all responsibilities, tasks, qualifications, and benefits. Be thorough - include everything.
+            - location: Full location (city, address if available)
+
+            Page Content:
+            {markdown_content}
+
+            Return ONLY a valid JSON object matching this schema:
+            {{
+              "job_title": "Software Engineer",
+              "application_url": "https://...",
+              "company_name": "TechCorp",
+              "requirements": ["Python", "Docker", "3+ years experience"],
+              "description": "Full detailed description of the role including responsibilities, qualifications, benefits...",
+              "location": "Berlin, Germany"
+            }}
+            If you cannot identify a job posting on this page, return null.
+            Do not include markdown formatting like ```json.
+            """
+
+            try:
+                raw_json = call_llm(
+                    [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+                )
+            except Exception as e:
+                print(f"LLM call failed in scrape_single_job: {e}")
+                return None
+
+            if raw_json.lower() == "null" or not raw_json:
+                return None
+
+            if raw_json.startswith("```"):
+                raw_json = re.sub(r"^```(?:json)?\n|\n```$", "", raw_json)
+
+            try:
+                parsed_data = json.loads(raw_json)
+                return JobOpening.model_validate(parsed_data)
+            except Exception:
+                return None
+
+    async def extract_from_raw_text(
+        self, raw_text: str, source_url: Optional[str] = None
+    ) -> Optional[JobOpening]:
+        prompt = f"""
+        Extract the full job posting details from the following text, which was copied/pasted by a user from a job listing page.
+
+        Extract ALL of the following:
+        - job_title: The exact job title
+        - company_name: The name of the hiring company (NOT the job board domain)
+        - requirements: Full list of required skills, qualifications, and experience
+        - description: The COMPLETE job description including all responsibilities, tasks, qualifications, and benefits. Be thorough - include everything.
+        - location: Full location (city, country)
+
+        Job Text:
+        {raw_text}
+
+        Return ONLY a valid JSON object matching this schema:
+        {{
+          "job_title": "Software Engineer",
+          "company_name": "TechCorp",
+          "requirements": ["Python", "Docker", "3+ years experience"],
+          "description": "Full detailed description of the role including responsibilities, qualifications, benefits...",
+          "location": "Berlin, Germany"
+        }}
+        If you cannot identify a job posting in this text, return null.
+        Do not include markdown formatting like ```json.
+        """
+
+        try:
+            raw_json = call_llm(
+                [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+            )
+        except Exception as e:
+            print(f"LLM call failed in extract_from_raw_text: {e}")
+            return None
+
+        if raw_json.lower() == "null" or not raw_json:
+            return None
+
+        if raw_json.startswith("```"):
+            raw_json = re.sub(r"^```(?:json)?\n|\n```$", "", raw_json)
+
+        try:
+            parsed_data = json.loads(raw_json)
+            job_opening = JobOpening.model_validate(parsed_data)
+            if source_url:
+                job_opening.application_url = source_url
+            elif not job_opening.application_url:
+                slug = re.sub(r"[^a-z0-9]+", "-", job_opening.job_title.lower()).strip(
+                    "-"
+                )
+                job_opening.application_url = f"manual://{slug}"
+            return job_opening
+        except Exception:
+            return None
 
     async def scrape_jobs(self, url: str) -> ScrapedJobs:
         ats_type = self.check_ats_footprint(url)

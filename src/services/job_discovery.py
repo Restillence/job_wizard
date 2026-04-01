@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from src.config import settings
 from src.models import Company as CompanyModel, CompanySize, UserSearch
+from src.services.llm_utils import acall_llm
 
 
 AGGREGATOR_DOMAINS = [
@@ -244,8 +245,9 @@ class JobDiscoveryService:
         company_size: Optional[CompanySize] = None,
     ) -> str:
         """Build a search query targeting company career pages with aggregator exclusions."""
-        city = cities[0] if cities else ""
-        industry = industries[0] if industries else ""
+        city_parts = " ".join(f'"{c}"' for c in cities) if cities else ""
+        industry_parts = " ".join(f'"{i}"' for i in industries) if industries else ""
+        keyword_parts = " ".join(keywords) if keywords else ""
         size = ""
 
         if company_size:
@@ -256,16 +258,13 @@ class JobDiscoveryService:
             }
             size = size_map.get(company_size, "")
 
-        # 1. Mandate career-specific keywords in the title or text
         career_terms = '("open positions" OR "vacancies" OR "careers" OR "karriere" OR "stellenangebote")'
-        # 2. Aggressively exclude job boards, news, blogs, and forums
         exclusions = "-site:linkedin.com -site:indeed.com -site:glassdoor.com -site:stepstone.de -site:xing.com -site:reddit.com -site:kununu.com -inurl:blog -inurl:news -inurl:press -inurl:article"
 
-        city_str = f'"{city}"' if city else ""
-        industry_str = f'"{industry}"' if industry else ""
+        city_str = city_parts
+        industry_str = industry_parts
 
-        # 3. Combine with our parameters
-        query = f"{city_str} {industry_str} {size} companies {career_terms} {exclusions}".strip()
+        query = f"{city_str} {industry_str} {keyword_parts} {size} companies {career_terms} {exclusions}".strip()
         query = " ".join(query.split())
         return query
 
@@ -404,13 +403,7 @@ Search Results:
             print(f"\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (EXTRACT NAMES) ---")
             print(prompt)
             print("--------------------------------------------------------------\n")
-            response = await acompletion(
-                model="openai/glm-5",
-                api_base=settings.ZAI_API_BASE,
-                api_key=settings.ZAI_API_KEY,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw_json = response.choices[0].message.content.strip()
+            raw_json = await acall_llm([{"role": "user", "content": prompt}])
 
             print("\n--- DEBUG: RAW LLM RESPONSE (NAMES) ---")
             print(raw_json)
@@ -486,13 +479,7 @@ Companies:
             print(f"\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (PREDICT URLS) ---")
             print(prompt)
             print("-------------------------------------------------------------\n")
-            response = await acompletion(
-                model="openai/glm-5",
-                api_base=settings.ZAI_API_BASE,
-                api_key=settings.ZAI_API_KEY,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw_json = response.choices[0].message.content.strip()
+            raw_json = await acall_llm([{"role": "user", "content": prompt}])
 
             print("\n--- DEBUG: RAW LLM RESPONSE (URLS) ---")
             print(raw_json)

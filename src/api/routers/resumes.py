@@ -8,9 +8,28 @@ from sqlalchemy.orm import Session
 from src.api.deps import verify_jwt, check_rate_limit
 import os
 import uuid
+import io
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 pii_service = PIIStrippingService()
+
+
+def _extract_text_from_pdf(content: bytes) -> str:
+    import fitz
+
+    doc = fitz.open(stream=content, filetype="pdf")
+    text_parts = []
+    for page in doc:
+        text_parts.append(page.get_text())
+    doc.close()
+    return "\n".join(text_parts)
+
+
+def _extract_text_from_docx(content: bytes) -> str:
+    from docx import Document
+
+    doc = Document(io.BytesIO(content))
+    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
 class UploadResponse(BaseModel):
@@ -29,26 +48,56 @@ async def upload_resume(
     upload_dir = "uploads/resumes"
     os.makedirs(upload_dir, exist_ok=True)
 
-    file_id = str(uuid.uuid4())
-    file_path = f"{upload_dir}/{file_id}.txt"
+    filename = file.filename or "resume.txt"
+    ext = os.path.splitext(filename)[1].lower()
+    allowed_extensions = {".txt", ".pdf", ".docx"}
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format: {ext}. Allowed: {', '.join(sorted(allowed_extensions))}",
+        )
 
     content = await file.read()
-    text_content = content.decode("utf-8")
+
+    if ext == ".txt":
+        try:
+            text_content = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text_content = content.decode("latin-1")
+    elif ext == ".pdf":
+        text_content = _extract_text_from_pdf(content)
+    elif ext == ".docx":
+        text_content = _extract_text_from_docx(content)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format")
+
+    if not text_content or not text_content.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from file")
+
     stripped_content = pii_service.strip_pii(text_content)
 
-    with open(file_path, "w", encoding="utf-8") as f:
+    file_id = str(uuid.uuid4())
+    original_path = f"{upload_dir}/{file_id}{ext}"
+    text_path = f"{upload_dir}/{file_id}.txt"
+
+    with open(original_path, "wb") as f:
+        f.write(content)
+
+    with open(text_path, "w", encoding="utf-8") as f:
         f.write(stripped_content)
 
     embedding = generate_embedding(stripped_content)
     if not embedding:
-        os.remove(file_path)
+        os.remove(original_path)
+        os.remove(text_path)
         raise HTTPException(
             status_code=500, detail="Failed to generate resume embedding"
         )
 
     resume = Resume(
         user_id=user_info["user_id"],
-        file_path=file_path,
+        file_path=text_path,
+        original_file_path=original_path,
         embedding=embedding_to_json(embedding),
     )
     db.add(resume)
@@ -57,6 +106,6 @@ async def upload_resume(
 
     return UploadResponse(
         message="Resume uploaded, PII stripped, and embedding generated",
-        file_path=file_path,
+        file_path=text_path,
         resume_id=resume.id,
     )

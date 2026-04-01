@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.job_discovery import JobDiscoveryService
 from tests.conftest import TestingSessionLocal
 
+
 @pytest.fixture
 def db_session():
     db = TestingSessionLocal()
@@ -18,7 +19,9 @@ def db_session():
 @patch("src.services.job_discovery.DDGS")
 @patch("httpx.AsyncClient.post")
 @patch("httpx.AsyncClient.head")
-async def test_discover_companies(mock_head, mock_post, mock_ddgs_class, mock_acompletion, mock_settings) -> None:
+async def test_discover_companies(
+    mock_head, mock_post, mock_ddgs_class, mock_acompletion, mock_settings
+) -> None:
     mock_settings.TAVILY_API_KEY = "test-key"
     mock_settings.SERPER_API_KEY = None
     mock_settings.BRAVE_API_KEY = None
@@ -27,21 +30,25 @@ async def test_discover_companies(mock_head, mock_post, mock_ddgs_class, mock_ac
 
     mock_post.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"results": [
-            {
-                "title": "Senior Developer at TestCorp",
-                "url": "https://linkedin.com/jobs/123",
-                "content": "TestCorp is hiring",
-            }
-        ]}
+        json=lambda: {
+            "results": [
+                {
+                    "title": "Senior Developer at TestCorp",
+                    "url": "https://linkedin.com/jobs/123",
+                    "content": "TestCorp is hiring",
+                }
+            ]
+        },
     )
-    
+
     mock_head.return_value = MagicMock(status_code=200)
 
     mock_response_names = MagicMock()
     mock_response_names.choices = [
         MagicMock(
-            message=MagicMock(content='{"results": [{"name": "TestCorp", "context_index": 0}, {"name": "AnotherCorp", "context_index": 0}]}')
+            message=MagicMock(
+                content='{"results": [{"name": "TestCorp", "context_index": 0}, {"name": "AnotherCorp", "context_index": 0}]}'
+            )
         )
     ]
 
@@ -88,19 +95,25 @@ async def test_discover_companies_with_exclusions(
 
     mock_post.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"results": [
-            {
-                "title": "Developer at NewCorp",
-                "url": "https://newcorp.com/careers",
-                "content": "NewCorp hiring",
-            }
-        ]}
+        json=lambda: {
+            "results": [
+                {
+                    "title": "Developer at NewCorp",
+                    "url": "https://newcorp.com/careers",
+                    "content": "NewCorp hiring",
+                }
+            ]
+        },
     )
     mock_head.return_value = MagicMock(status_code=200)
 
     mock_response_names = MagicMock()
     mock_response_names.choices = [
-        MagicMock(message=MagicMock(content='{"results": [{"name": "NewCorp", "context_index": 0}]}'))
+        MagicMock(
+            message=MagicMock(
+                content='{"results": [{"name": "NewCorp", "context_index": 0}]}'
+            )
+        )
     ]
 
     mock_response_urls = MagicMock()
@@ -120,12 +133,13 @@ async def test_discover_companies_with_exclusions(
         exclude_companies=["TestCorp", "AnotherCorp"],
     )
 
+
 @pytest.mark.anyio
 @patch("src.services.job_discovery.JobDiscoveryService.discover_companies")
 async def test_search_companies_local_hit(mock_discover, db_session) -> None:
     from src.models import Company as CompanyModel, CompanySize
     from src.services.job_discovery import JobDiscoveryService
-    
+
     # Add a company to DB
     company = CompanyModel(
         name="LocalCorp",
@@ -133,23 +147,21 @@ async def test_search_companies_local_hit(mock_discover, db_session) -> None:
         city="Berlin",
         industry="Software",
         company_size=CompanySize.startup,
-        url_verified=True
+        url_verified=True,
     )
     db_session.add(company)
     db_session.commit()
-    
+
     service = JobDiscoveryService()
-    
+
     # Search for Berlin (threshold for specific query is 5)
     # If we have 1 company, it's < 5, so it should trigger discovery
     mock_discover.return_value = []
-    
+
     result = await service.search_companies(
-        db=db_session,
-        cities=["Berlin"],
-        industries=["Software"]
+        db=db_session, cities=["Berlin"], industries=["Software"]
     )
-    
+
     assert result.total_found >= 1
     mock_discover.assert_called_once()
 
@@ -159,7 +171,7 @@ async def test_search_companies_local_hit(mock_discover, db_session) -> None:
 async def test_search_companies_threshold_met(mock_discover, db_session) -> None:
     from src.models import Company as CompanyModel, CompanySize
     from src.services.job_discovery import JobDiscoveryService
-    
+
     # Add 6 companies to DB (specific threshold is 5)
     for i in range(6):
         company = CompanyModel(
@@ -168,19 +180,17 @@ async def test_search_companies_threshold_met(mock_discover, db_session) -> None
             city="Berlin",
             industry="Software",
             company_size=CompanySize.startup,
-            url_verified=True
+            url_verified=True,
         )
         db_session.add(company)
     db_session.commit()
-    
+
     service = JobDiscoveryService()
-    
+
     result = await service.search_companies(
-        db=db_session,
-        cities=["Berlin"],
-        industries=["Software"]
+        db=db_session, cities=["Berlin"], industries=["Software"]
     )
-    
+
     assert result.total_found >= 6
     assert result.source == "local"
     mock_discover.assert_not_called()
@@ -204,10 +214,11 @@ def test_build_search_query():
     assert "FinTech" in query
     assert "Python" in query
     assert "startup" in query
-    assert "companies careers hiring" in query
-    assert "-linkedin" in query
-    assert "-indeed" in query
-    assert "-glassdoor" in query
+    assert "companies" in query
+    assert "careers" in query
+    assert "-site:linkedin.com" in query
+    assert "-site:indeed.com" in query
+    assert "-site:glassdoor.com" in query
 
 
 def test_is_aggregator_url():

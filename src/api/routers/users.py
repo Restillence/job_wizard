@@ -108,7 +108,7 @@ async def reuse_search(
         except ValueError:
             pass
 
-    result = discovery_service.search_companies(
+    result = await discovery_service.search_companies(
         db=db,
         user_id=user_id,
         cities=search.cities,
