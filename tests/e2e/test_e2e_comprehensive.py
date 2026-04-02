@@ -74,8 +74,12 @@ async def mock_scrape_jobs(url: str):
     )
 
 
-def mock_generate_draft(job, resume_text):
-    return ("Test cover letter", "Test AI rationale")
+def mock_generate_draft(*args, **kwargs):
+    from src.services.cv_generator import CoverLetterResult
+
+    return CoverLetterResult(
+        cover_letter="Test cover letter", ai_match_rationale="Test AI rationale"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -104,7 +108,7 @@ def client():
             side_effect=mock_scrape_jobs,
         ),
         patch(
-            "src.services.cover_letter.CoverLetterService.generate_draft",
+            "src.services.cv_generator.CVGeneratorService.generate_cover_letter",
             side_effect=mock_generate_draft,
         ),
     ]

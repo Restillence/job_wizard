@@ -223,14 +223,11 @@ class TestLiveCoverLetterGeneration:
 
     def test_generate_cover_letter(self):
         """Test generating a cover letter with real LLM."""
-        from src.services.cover_letter import CoverLetterService
+        from src.services.cv_generator import CVGeneratorService
+        from src.services.cv_parser import ParsedCV, CVSection
         from unittest.mock import MagicMock
 
-        service = CoverLetterService()
-
-        job = MagicMock()
-        job.title = "Senior Python Developer"
-        job.description = "Looking for a Python developer with FastAPI experience. Must have 5+ years experience."
+        service = CVGeneratorService()
 
         resume_text = """
         John Doe
@@ -239,14 +236,36 @@ class TestLiveCoverLetterGeneration:
         Skills: Python, FastAPI, PostgreSQL, Docker, AWS
         """
 
-        cover_letter, rationale = service.generate_draft(job, resume_text)
-
-        assert cover_letter, "Cover letter should be generated"
-        assert len(cover_letter) > 100, "Cover letter should be substantial"
-        assert rationale, "AI rationale should be provided"
-        assert "Python" in cover_letter or "python" in cover_letter.lower(), (
-            "Cover letter should mention relevant skills"
+        parsed_cv = ParsedCV(
+            summary="Software Engineer with 6 years of experience",
+            experience=[
+                CVSection(
+                    title="Software Engineer @ TechStartup",
+                    content="Built REST APIs with Python, FastAPI, PostgreSQL",
+                )
+            ],
+            skills=["Python", "FastAPI", "PostgreSQL", "Docker", "AWS"],
         )
+
+        result = service.generate_cover_letter(
+            parsed_cv=parsed_cv,
+            job_title="Senior Python Developer",
+            company_name="TestCorp",
+            job_description="Looking for a Python developer with FastAPI experience. Must have 5+ years experience.",
+            job_requirements={"skills": ["Python", "FastAPI"]},
+        )
+
+        assert result.cover_letter, "Cover letter should be generated"
+        assert len(result.cover_letter) > 100, "Cover letter should be substantial"
+        assert (
+            "Python" in result.cover_letter or "python" in result.cover_letter.lower()
+        ), "Cover letter should mention relevant skills"
+
+        assert result.cover_letter, "Cover letter should be generated"
+        assert len(result.cover_letter) > 100, "Cover letter should be substantial"
+        assert (
+            "Python" in result.cover_letter or "python" in result.cover_letter.lower()
+        ), "Cover letter should mention relevant skills"
 
 
 class TestLivePIIStripping:

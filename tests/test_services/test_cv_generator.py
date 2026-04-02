@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from src.services.cv_parser import ParsedCV, CVSection
 from src.services.cv_generator import (
     TailoredCV,
@@ -46,12 +46,9 @@ def _sample_tailored_cv():
     )
 
 
-def test_tailor_cv():
-    service = CVGeneratorService()
-
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = """{
+@patch("src.services.cv_generator.call_llm")
+def test_tailor_cv(mock_call_llm):
+    mock_call_llm.return_value = """{
         "summary": "Tailored summary",
         "experience": [{"title": "Senior Dev @ TechCorp | 2021-Present", "content": "Built Python systems"}],
         "education": [{"title": "B.Sc. CS | TU Berlin | 2019", "content": "CS degree"}],
@@ -62,37 +59,34 @@ def test_tailor_cv():
         "tailoring_notes": "Reordered skills"
     }"""
 
-    with patch("src.services.cv_generator.completion", return_value=mock_response):
-        result = service.tailor_cv(
-            parsed_cv=_sample_parsed_cv(),
-            job_title="Python Developer",
-            job_description="Looking for Python expert",
-            job_requirements={"skills": ["Python"]},
-        )
+    service = CVGeneratorService()
+    result = service.tailor_cv(
+        parsed_cv=_sample_parsed_cv(),
+        job_title="Python Developer",
+        job_description="Looking for Python expert",
+        job_requirements={"skills": ["Python"]},
+    )
 
     assert isinstance(result, TailoredCV)
     assert result.tailoring_notes == "Reordered skills"
     assert "Python" in result.skills
 
 
-def test_generate_cover_letter():
-    service = CVGeneratorService()
-
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = """{
+@patch("src.services.cv_generator.call_llm")
+def test_generate_cover_letter(mock_call_llm):
+    mock_call_llm.return_value = """{
         "cover_letter": "Dear Hiring Manager,\\n\\nI am writing to apply...",
         "ai_match_rationale": "User has 3/5 required skills"
     }"""
 
-    with patch("src.services.cv_generator.completion", return_value=mock_response):
-        result = service.generate_cover_letter(
-            parsed_cv=_sample_parsed_cv(),
-            job_title="Python Developer",
-            company_name="TestCorp",
-            job_description="Python backend role",
-            job_requirements={"skills": ["Python"]},
-        )
+    service = CVGeneratorService()
+    result = service.generate_cover_letter(
+        parsed_cv=_sample_parsed_cv(),
+        job_title="Python Developer",
+        company_name="TestCorp",
+        job_description="Python backend role",
+        job_requirements={"skills": ["Python"]},
+    )
 
     assert isinstance(result, CoverLetterResult)
     assert "Dear" in result.cover_letter
