@@ -111,6 +111,26 @@ python -c "from src.database import engine; from src.models import Base; Base.me
 - **What:** Heuristic extractor misidentifies navigation/footer links as job listings.
 - **Rule:** ATS fast-path is preferred where available. Slow-path results need LLM validation before upsert.
 
+### LLM-004: GLM-5.1 reasoning mode truncates extraction output
+- **What:** `max_tokens=4096` was split between `reasoning_content` + `content`, leaving only ~1800 chars for actual JSON extraction from job pages.
+- **Root cause:** Reasoning mode is inherent to GLM-5.1 — cannot be disabled.
+- **Rule:** Use `model="openai/glm-4.7-flash"` (free, no reasoning) for all extraction tasks. Full token budget goes to content.
+
+### ASYNC-001: Sync call_llm inside async def blocks event loop
+- **What:** `scrape_single_job`, `extract_from_raw_text`, `_crawl4ai_fallback` were `async` methods calling sync `call_llm`, blocking the FastAPI event loop.
+- **Root cause:** Missing conversion during initial implementation.
+- **Rule:** All `async` methods must use `acall_llm`, not `call_llm`.
+
+### ENCODING-001: Crawl4AI corrupts German umlauts on Windows
+- **What:** Crawl4AI HTML→markdown conversion produces corrupted umlauts (e.g. `ü` → garbled bytes) on Windows cp1252 consoles.
+- **Root cause:** `sys.stdout.reconfigure` only fixes console output, not the crawler's internal encoding.
+- **Rule:** Always run `_sanitize_encoding()` on `result.markdown` before processing. Implemented in `crawl_utils.py:clean_markdown()`.
+
+### DRY-001: Duplicate crawl configs and cleaning functions
+- **What:** `_clean_markdown()`, `CrawlerRunConfig`, noise patterns were duplicated between `hybrid_extraction.py` and `job_extraction.py` with different defaults (8000 vs 12000 chars).
+- **Root cause:** Two files evolved independently.
+- **Rule:** All crawl-related shared code lives in `src/services/crawl_utils.py`. Single `JOB_CRAWL_CONFIG` instance, single `clean_markdown()` function.
+
 ---
 
 ## Anti-Cheat Rules
@@ -144,9 +164,27 @@ result: str = await acall_llm(prompt, model="openai/glm-5.1", max_tokens=4096, t
 - Return **plain string** (not LiteLLM response object)
 - Defaults: `model="openai/glm-5.1"`, `max_tokens=4096`, `timeout=120`
 
-**Deployed across:** `company_discovery.py`, `job_discovery.py`, `job_extraction.py`, `cover_letter.py`, `cv_generator.py`, `embedding_service.py`, `vector_matching.py`, `pii_stripping.py`
+**Deployed across:** `company_discovery.py`, `job_discovery.py`, `job_extraction.py`, `hybrid_extraction.py`, `cv_generator.py`, `cv_parser.py`, `pii_stripping.py`
 
 **NEVER** call `litellm.completion()` directly outside `llm_utils.py`.
+
+### Model Selection Strategy
+
+| Task | Model | Why |
+|---|---|---|
+| Extraction (scrape/raw_text → JSON) | `openai/glm-4.7-flash` | Free, no reasoning mode, full token budget for content |
+| Matching, cover letter, CV tailoring | `openai/glm-5.1` (default) | Reasoning improves quality for complex generation |
+| Embeddings | `gemini/gemini-embedding-001` | 3072-dim, separate from LLM calls |
+
+Extraction calls pass `model="openai/glm-4.7-flash"` explicitly. All other calls use the default `openai/glm-5.1`.
+
+### Shared Crawl Utils — `src/services/crawl_utils.py`
+
+Centralized crawling config and markdown cleaning used by both `hybrid_extraction.py` and `job_extraction.py`:
+
+- `JOB_CRAWL_CONFIG` — single `CrawlerRunConfig` instance (excluded tags, selectors, only_text)
+- `clean_markdown(md, max_chars=12000)` — head/tail trimming, noise pattern removal, encoding sanitization
+- `_sanitize_encoding(text)` — encode/decode safety pass for Crawl4AI output (fixes umlaut corruption on Windows)
 
 ---
 

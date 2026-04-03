@@ -9,7 +9,6 @@ from src.api.deps import verify_jwt, check_rate_limit
 from src.services.job_discovery import JobDiscoveryService, Company, CompanySize
 from src.services.hybrid_extraction import (
     HybridExtractionService,
-    ScrapedJobs,
     JobOpening,
 )
 from src.services.embeddings import (
@@ -196,6 +195,7 @@ def _upsert_job_board_jobs(
                     title=new_job.title,
                     description=new_job.description,
                     requirements={},
+                    tags=new_job.tags,
                 )
                 if emb:
                     new_job.embedding = embedding_to_json(emb)
@@ -406,6 +406,15 @@ class AddJobResponse(BaseModel):
     description: Optional[str] = None
     source: str
     is_new: bool
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_currency: Optional[str] = None
+    start_date: Optional[str] = None
+    job_types: Optional[List[str]] = None
+    remote: Optional[bool] = None
+    benefits: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+    extra_info: Optional[dict] = None
 
 
 _AGGREGATOR_DOMAINS = {
@@ -596,6 +605,18 @@ async def add_job(
         existing_job.is_active = True
         if job_opening.description:
             existing_job.description = job_opening.description
+        if job_opening.salary_min is not None and existing_job.salary_min is None:
+            existing_job.salary_min = job_opening.salary_min
+        if job_opening.salary_max is not None and existing_job.salary_max is None:
+            existing_job.salary_max = job_opening.salary_max
+        if job_opening.job_types and not existing_job.job_types:
+            existing_job.job_types = job_opening.job_types
+        if job_opening.remote is not None and not existing_job.remote:
+            existing_job.remote = job_opening.remote
+        if job_opening.tags and not existing_job.tags:
+            existing_job.tags = job_opening.tags
+        if job_opening.extra_info and not existing_job.extra_info:
+            existing_job.extra_info = job_opening.extra_info
         db.commit()
         db.refresh(existing_job)
 
@@ -610,6 +631,13 @@ async def add_job(
             description=existing_job.description or "",
             source=existing_job.source,
             is_new=False,
+            salary_min=existing_job.salary_min,
+            salary_max=existing_job.salary_max,
+            salary_currency=existing_job.salary_currency,
+            job_types=existing_job.job_types,
+            remote=existing_job.remote,
+            tags=existing_job.tags,
+            extra_info=existing_job.extra_info,
         )
 
     company_name = (
@@ -624,10 +652,14 @@ async def add_job(
     if existing_company:
         company = existing_company
     else:
+        company_url = request.url
+        if not company_url:
+            slug = re.sub(r"[^a-z0-9]+", "-", company_name.lower()).strip("-")
+            company_url = f"manual://company/{slug}"
         company = CompanyModel(
             name=company_name,
-            url=request.url or "",
-            url_verified=False,
+            url=company_url,
+            url_verified=bool(request.url),
         )
         db.add(company)
         db.flush()
@@ -636,6 +668,8 @@ async def add_job(
         title=job_opening.job_title,
         description=job_opening.description or "",
         requirements={"requirements": job_opening.requirements or []},
+        benefits=job_opening.benefits,
+        tags=job_opening.tags,
     )
 
     now = _get_utc_now()
@@ -644,7 +678,10 @@ async def add_job(
         source_url=job_opening.application_url,
         title=job_opening.job_title,
         description=job_opening.description or "",
-        extracted_requirements={"requirements": job_opening.requirements or []},
+        extracted_requirements={
+            "requirements": job_opening.requirements or [],
+            "benefits": job_opening.benefits or [],
+        },
         embedding=embedding_to_json(embedding),
         is_active=True,
         first_seen_at=now,
@@ -652,6 +689,13 @@ async def add_job(
         source="manual_url" if request.url else "manual_text",
         sources=["manual_url" if request.url else "manual_text"],
         location_city=job_opening.location,
+        salary_min=job_opening.salary_min,
+        salary_max=job_opening.salary_max,
+        salary_currency=job_opening.salary_currency,
+        job_types=job_opening.job_types,
+        remote=job_opening.remote or False,
+        tags=job_opening.tags,
+        extra_info=job_opening.extra_info,
     )
     db.add(new_job)
     db.commit()
@@ -666,6 +710,14 @@ async def add_job(
         description=new_job.description or "",
         source=new_job.source,
         is_new=True,
+        salary_min=new_job.salary_min,
+        salary_max=new_job.salary_max,
+        salary_currency=new_job.salary_currency,
+        job_types=new_job.job_types,
+        remote=new_job.remote,
+        benefits=job_opening.benefits,
+        tags=new_job.tags,
+        extra_info=new_job.extra_info,
     )
 
 

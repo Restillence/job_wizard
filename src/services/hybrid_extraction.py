@@ -14,61 +14,55 @@ if sys.platform == "win32" and sys.stdout.encoding != "utf-8":
 from pydantic import BaseModel
 
 from crawl4ai import AsyncWebCrawler  # type: ignore
-from crawl4ai.async_configs import CrawlerRunConfig  # type: ignore
 import httpx
 from sqlalchemy.orm import Session
-from src.config import settings
 from src.models import Job, Company
+from src.services.crawl_utils import JOB_CRAWL_CONFIG, clean_markdown
 from src.services.embeddings import generate_job_embedding, embedding_to_json
-from src.services.llm_utils import call_llm
+from src.services.llm_utils import acall_llm
 
-_JOB_LISTING_CONFIG = CrawlerRunConfig(
-    word_count_threshold=10,
-    excluded_tags=["nav", "footer", "header", "aside", "form", "noscript"],
-    excluded_selector=".cookie-banner, .sidebar, .related-jobs, .recommendations, .similar-jobs, [role='navigation'], [role='banner'], [role='contentinfo']",
-    remove_overlay_elements=True,
-    remove_forms=True,
-    only_text=True,
-    exclude_external_links=True,
-    exclude_social_media_links=True,
-)
+EXTRACTION_MODEL = "openai/glm-4.7-flash"
 
-_SINGLE_JOB_CONFIG = CrawlerRunConfig(
-    word_count_threshold=10,
-    excluded_tags=["nav", "footer", "header", "aside", "form", "noscript"],
-    excluded_selector=".cookie-banner, .sidebar, .related-jobs, .recommendations, .similar-jobs, [role='navigation'], [role='banner'], [role='contentinfo']",
-    remove_overlay_elements=True,
-    remove_forms=True,
-    only_text=True,
-    exclude_external_links=True,
-    exclude_social_media_links=True,
-)
+EXTRACTION_FIELD_INSTRUCTIONS = """
+Extract ALL of the following fields:
+- job_title: The exact job title
+- company_name: The hiring company name (NOT the job board domain)
+- location: Full location (city, country if available)
+- description: The COMPLETE job posting text. Copy ALL content VERBATIM in the ORIGINAL LANGUAGE — do NOT translate, do NOT summarize. Include responsibilities, tasks, qualifications, benefits, about the company, contact info. Every paragraph.
+- requirements: Full list of ALL required skills, qualifications, degrees, experience, language skills. Each as a separate item. Include degree requirements, language levels (e.g. "B2 German"), tech stack, years of experience.
+- salary_min: Minimum salary as a NUMBER (e.g. 64000). null if not stated.
+- salary_max: Maximum salary as a NUMBER. null if not stated.
+- salary_currency: Currency code (EUR, CHF, GBP). Default EUR.
+- start_date: Start date exactly as stated in the text (e.g. "15.09.2026", "asap", "Q3 2026"). null if not stated.
+- job_types: List of job type tags, e.g. ["full-time", "permanent"] or ["part-time", "contract"]. null if not stated.
+- remote: true if the job is remote or hybrid, false if on-site only, null if unclear.
+- benefits: List of ONLY the benefits EXPLICITLY STATED in the text. Do NOT invent generic filler. If the text says "permanent contract from day 1" and "18-month trainee program", include those. null if none stated.
+- tags: Additional labels or categories (e.g. "entry-level", "senior", "trainee", "graduate program"). null if none.
+- extra_info: Any other noteworthy information NOT covered above, as key-value pairs. Examples: application_deadline, reference_number, department, career_level, team_size, travel_requirements, probation_period, number_of_vacancies, collective_agreement. null if nothing extra.
 
-_NOISE_PATTERNS = re.compile(
-    r"(?mi)^.*\b(cookie|consent|privacy|datenschutz|impressum|newsletter|abonn|anmelden|registrier|sign[\s_-]?up|log[\s_-]?in|subscribe|newsletter|tracking|werbung|advertisement)\b.*$"
-)
-_IMG_PATTERN = re.compile(r"!\[[^\]]*\]\([^\)]+\)")
-_LINK_ONLY_PATTERN = re.compile(r"^\[([^\]]*)\]\([^\)]+\)$", re.MULTILINE)
-
-
-def _clean_markdown(md: str, max_chars: int = 8000) -> str:
-    md = _IMG_PATTERN.sub("", md)
-    md = _LINK_ONLY_PATTERN.sub(r"\1", md)
-    md = _NOISE_PATTERNS.sub("", md)
-    md = re.sub(r"\n{3,}", "\n\n", md)
-    md = md.strip()
-    if len(md) > max_chars:
-        md = md[:max_chars]
-    return md
+CRITICAL RULES:
+- description MUST be the FULL VERBATIM text in the ORIGINAL LANGUAGE. Never translate German to English or vice versa.
+- benefits and requirements MUST ONLY contain information EXPLICITLY STATED in the source. Never fabricate or guess.
+- salary values must be NUMBERS (e.g. 64000), not strings like "64.000 EUR".
+- If a field is not mentioned in the source, use null. Never fabricate data."""
 
 
 class JobOpening(BaseModel):
     job_title: str
-    application_url: str
+    application_url: str = ""
     company_name: Optional[str] = None
     requirements: Optional[List[str]] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_currency: Optional[str] = "EUR"
+    start_date: Optional[str] = None
+    job_types: Optional[List[str]] = None
+    remote: Optional[bool] = None
+    benefits: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+    extra_info: Optional[dict[str, str]] = None
 
 
 class ScrapedJobs(BaseModel):
@@ -197,18 +191,13 @@ class HybridExtractionService:
 
     async def _crawl4ai_fallback(self, url: str) -> ScrapedJobs:
         async with AsyncWebCrawler(verbose=False) as crawler:
-            result = await crawler.arun(url=url, crawler_config=_JOB_LISTING_CONFIG)
-            markdown_content = _clean_markdown(result.markdown, max_chars=12000)
+            result = await crawler.arun(url=url, crawler_config=JOB_CRAWL_CONFIG)
+            markdown_content = clean_markdown(result.markdown, max_chars=12000)
 
             prompt = f"""
-            Extract job postings from the following markdown text scraped from a career page.
-            For each job, extract:
-            - job_title: The job title
-            - application_url: Direct URL to apply or view the job (use the original source URL if none found)
-            - company_name: The name of the hiring company (NOT the job board domain)
-            - requirements: List of required skills/qualifications
-            - description: Full job description including responsibilities and qualifications
-            - location: Job location (city, country)
+            {EXTRACTION_FIELD_INSTRUCTIONS}
+
+            This is a career page that may contain MULTIPLE job listings.
 
             Markdown Content:
             {markdown_content}
@@ -216,15 +205,33 @@ class HybridExtractionService:
             Return ONLY a valid JSON object matching this schema:
             {{
               "jobs": [
-                {{"job_title": "Software Engineer", "application_url": "https://...", "company_name": "TechCorp", "requirements": ["Python", "Docker"], "description": "Full description...", "location": "Munich"}}
+                {{
+                  "job_title": "string",
+                  "application_url": "string (use original source URL if none found)",
+                  "company_name": "string or null",
+                  "location": "string or null",
+                  "description": "full verbatim text in original language",
+                  "requirements": ["list of explicitly stated requirements"],
+                  "salary_min": number or null,
+                  "salary_max": number or null,
+                  "salary_currency": "string or null",
+                  "start_date": "string or null",
+                  "job_types": ["list of type tags"] or null,
+                  "remote": true/false/null,
+                  "benefits": ["list of explicitly stated benefits"] or null,
+                  "tags": ["list of tags"] or null,
+                  "extra_info": {{"key": "value"}} or null
+                }}
               ]
             }}
-            Do not include markdown formatting like ```json.
-            """
+            Do not include markdown formatting like ```json."""
 
             try:
-                raw_json = call_llm(
-                    [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+                raw_json = await acall_llm(
+                    [{"role": "user", "content": prompt}],
+                    model=EXTRACTION_MODEL,
+                    timeout=120,
+                    max_tokens=4096,
                 )
             except Exception as e:
                 print(f"LLM call failed in _crawl4ai_fallback: {e}")
@@ -241,40 +248,47 @@ class HybridExtractionService:
 
     async def scrape_single_job(self, url: str) -> Optional[JobOpening]:
         async with AsyncWebCrawler(verbose=False) as crawler:
-            result = await crawler.arun(url=url, crawler_config=_SINGLE_JOB_CONFIG)
-            markdown_content = _clean_markdown(result.markdown, max_chars=8000)
+            result = await crawler.arun(url=url, crawler_config=JOB_CRAWL_CONFIG)
+            markdown_content = clean_markdown(result.markdown, max_chars=12000)
+
+            if not markdown_content or len(markdown_content.strip()) < 50:
+                return None
 
             prompt = f"""
-            Extract the full job posting details from the following page content.
-            This is a SINGLE job posting page, not a job listing page.
+            {EXTRACTION_FIELD_INSTRUCTIONS}
 
-            Extract ALL of the following:
-            - job_title: The exact job title
-            - application_url: The URL to apply (use the page URL if none found)
-            - company_name: The name of the hiring company (NOT the job board domain like indeed.com)
-            - requirements: Full list of required skills, qualifications, and experience
-            - description: The COMPLETE job description including all responsibilities, tasks, qualifications, and benefits. Be thorough - include everything.
-            - location: Full location (city, address if available)
+            This is a SINGLE job posting detail page, not a job listing page.
 
             Page Content:
             {markdown_content}
 
             Return ONLY a valid JSON object matching this schema:
             {{
-              "job_title": "Software Engineer",
-              "application_url": "https://...",
-              "company_name": "TechCorp",
-              "requirements": ["Python", "Docker", "3+ years experience"],
-              "description": "Full detailed description of the role including responsibilities, qualifications, benefits...",
-              "location": "Berlin, Germany"
+              "job_title": "string",
+              "application_url": "string or omitted (use page URL if none found)",
+              "company_name": "string or null",
+              "location": "string or null",
+              "description": "full verbatim text in original language",
+              "requirements": ["list of explicitly stated requirements"],
+              "salary_min": number or null,
+              "salary_max": number or null,
+              "salary_currency": "string or null",
+              "start_date": "string or null",
+              "job_types": ["list of type tags"] or null,
+              "remote": true/false/null,
+              "benefits": ["list of explicitly stated benefits"] or null,
+              "tags": ["list of tags"] or null,
+              "extra_info": {{"key": "value"}} or null
             }}
             If you cannot identify a job posting on this page, return null.
-            Do not include markdown formatting like ```json.
-            """
+            Do not include markdown formatting like ```json."""
 
             try:
-                raw_json = call_llm(
-                    [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+                raw_json = await acall_llm(
+                    [{"role": "user", "content": prompt}],
+                    model=EXTRACTION_MODEL,
+                    timeout=180,
+                    max_tokens=8192,
                 )
             except Exception as e:
                 print(f"LLM call failed in scrape_single_job: {e}")
@@ -296,33 +310,39 @@ class HybridExtractionService:
         self, raw_text: str, source_url: Optional[str] = None
     ) -> Optional[JobOpening]:
         prompt = f"""
-        Extract the full job posting details from the following text, which was copied/pasted by a user from a job listing page.
+        {EXTRACTION_FIELD_INSTRUCTIONS}
 
-        Extract ALL of the following:
-        - job_title: The exact job title
-        - company_name: The name of the hiring company (NOT the job board domain)
-        - requirements: Full list of required skills, qualifications, and experience
-        - description: The COMPLETE job description including all responsibilities, tasks, qualifications, and benefits. Be thorough - include everything.
-        - location: Full location (city, country)
+        This text was copied/pasted by a user from a job listing page.
 
         Job Text:
         {raw_text}
 
         Return ONLY a valid JSON object matching this schema:
         {{
-          "job_title": "Software Engineer",
-          "company_name": "TechCorp",
-          "requirements": ["Python", "Docker", "3+ years experience"],
-          "description": "Full detailed description of the role including responsibilities, qualifications, benefits...",
-          "location": "Berlin, Germany"
+          "job_title": "string",
+          "company_name": "string or null",
+          "location": "string or null",
+          "description": "full verbatim text in original language",
+          "requirements": ["list of explicitly stated requirements"],
+          "salary_min": number or null,
+          "salary_max": number or null,
+          "salary_currency": "string or null",
+          "start_date": "string or null",
+          "job_types": ["list of type tags"] or null,
+          "remote": true/false/null,
+          "benefits": ["list of explicitly stated benefits"] or null,
+          "tags": ["list of tags"] or null,
+          "extra_info": {{"key": "value"}} or null
         }}
         If you cannot identify a job posting in this text, return null.
-        Do not include markdown formatting like ```json.
-        """
+        Do not include markdown formatting like ```json."""
 
         try:
-            raw_json = call_llm(
-                [{"role": "user", "content": prompt}], timeout=120, max_tokens=4096
+            raw_json = await acall_llm(
+                [{"role": "user", "content": prompt}],
+                model=EXTRACTION_MODEL,
+                timeout=120,
+                max_tokens=8192,
             )
         except Exception as e:
             print(f"LLM call failed in extract_from_raw_text: {e}")
@@ -382,7 +402,6 @@ class HybridExtractionService:
             if target_cities:
                 location_str = (job_opening.location or "").lower()
                 title_str = job_opening.job_title.lower()
-                # Accept if any target city is in location or title, or if location indicates remote
                 valid_location = False
                 for city in target_cities:
                     c_lower = city.lower()
@@ -411,6 +430,24 @@ class HybridExtractionService:
                 existing_job.is_active = True
                 if job_opening.description:
                     existing_job.description = job_opening.description
+                if (
+                    job_opening.salary_min is not None
+                    and existing_job.salary_min is None
+                ):
+                    existing_job.salary_min = job_opening.salary_min
+                if (
+                    job_opening.salary_max is not None
+                    and existing_job.salary_max is None
+                ):
+                    existing_job.salary_max = job_opening.salary_max
+                if job_opening.job_types and not existing_job.job_types:
+                    existing_job.job_types = job_opening.job_types
+                if job_opening.remote is not None and not existing_job.remote:
+                    existing_job.remote = job_opening.remote
+                if job_opening.benefits and not existing_job.tags:
+                    existing_job.tags = job_opening.benefits
+                if job_opening.extra_info and not existing_job.extra_info:
+                    existing_job.extra_info = job_opening.extra_info
                 updated += 1
                 jobs_list.append(existing_job)
             else:
@@ -418,6 +455,8 @@ class HybridExtractionService:
                     title=job_opening.job_title,
                     description=job_opening.description or "",
                     requirements={"requirements": job_opening.requirements or []},
+                    benefits=job_opening.benefits,
+                    tags=job_opening.tags,
                 )
 
                 new_job = Job(
@@ -426,7 +465,8 @@ class HybridExtractionService:
                     title=job_opening.job_title,
                     description=job_opening.description or "",
                     extracted_requirements={
-                        "requirements": job_opening.requirements or []
+                        "requirements": job_opening.requirements or [],
+                        "benefits": job_opening.benefits or [],
                     },
                     embedding=embedding_to_json(embedding),
                     is_active=True,
@@ -434,6 +474,14 @@ class HybridExtractionService:
                     last_seen_at=now,
                     source="company_scrape",
                     sources=["company_scrape"],
+                    location_city=job_opening.location,
+                    salary_min=job_opening.salary_min,
+                    salary_max=job_opening.salary_max,
+                    salary_currency=job_opening.salary_currency,
+                    job_types=job_opening.job_types,
+                    remote=job_opening.remote or False,
+                    tags=job_opening.tags,
+                    extra_info=job_opening.extra_info,
                 )
                 db.add(new_job)
                 newly_added += 1
@@ -484,7 +532,6 @@ class HybridExtractionService:
         total_new = 0
         total_updated = 0
 
-        # Run extractions in parallel
         tasks = []
         companies = []
         for company_id in company_ids:

@@ -23,6 +23,10 @@ import time
 import argparse
 from datetime import datetime, timezone
 
+if sys.platform == "win32" and sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import httpx
 
 BASE_URL = "http://localhost:8000"

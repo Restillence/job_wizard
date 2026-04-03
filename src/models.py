@@ -115,6 +115,7 @@ class Job(Base):
     tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
     visa_sponsorship: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     raw_data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    extra_info: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     company: Mapped["Company"] = relationship(back_populates="jobs")
 

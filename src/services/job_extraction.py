@@ -3,36 +3,10 @@ import re
 from typing import Optional
 from pydantic import BaseModel
 from crawl4ai import AsyncWebCrawler
-from crawl4ai.async_configs import CrawlerRunConfig
-from src.config import settings
+from src.services.crawl_utils import JOB_CRAWL_CONFIG, clean_markdown
+from src.services.llm_utils import acall_llm
 
-_JOB_EXTRACTION_CONFIG = CrawlerRunConfig(
-    word_count_threshold=10,
-    excluded_tags=["nav", "footer", "header", "aside", "form", "noscript"],
-    excluded_selector=".cookie-banner, .sidebar, .related-jobs, .recommendations, .similar-jobs, [role='navigation'], [role='banner'], [role='contentinfo']",
-    remove_overlay_elements=True,
-    remove_forms=True,
-    only_text=True,
-    exclude_external_links=True,
-    exclude_social_media_links=True,
-)
-
-_NOISE_PATTERNS = re.compile(
-    r"(?mi)^.*\b(cookie|consent|privacy|datenschutz|impressum|newsletter|abonn|anmelden|registrier|sign[\s_-]?up|log[\s_-]?in|subscribe|tracking|werbung|advertisement)\b.*$"
-)
-_IMG_PATTERN = re.compile(r"!\[[^\]]*\]\([^\)]+\)")
-_LINK_ONLY_PATTERN = re.compile(r"^\[([^\]]*)\]\([^\)]+\)$", re.MULTILINE)
-
-
-def _clean_markdown(md: str, max_chars: int = 12000) -> str:
-    md = _IMG_PATTERN.sub("", md)
-    md = _LINK_ONLY_PATTERN.sub(r"\1", md)
-    md = _NOISE_PATTERNS.sub("", md)
-    md = re.sub(r"\n{3,}", "\n\n", md)
-    md = md.strip()
-    if len(md) > max_chars:
-        md = md[:max_chars]
-    return md
+EXTRACTION_MODEL = "openai/glm-4.7-flash"
 
 
 class ExtractedJobData(BaseModel):
@@ -53,13 +27,13 @@ class ExtractionResult(BaseModel):
 async def scrape_jobs(url: str) -> ExtractionResult:
     try:
         async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url=url, crawler_config=_JOB_EXTRACTION_CONFIG)
+            result = await crawler.arun(url=url, crawler_config=JOB_CRAWL_CONFIG)
             markdown_content = result.markdown
 
             if not markdown_content or not markdown_content.strip():
                 return ExtractionResult(jobs=[])
 
-            markdown_content = _clean_markdown(markdown_content, max_chars=12000)
+            markdown_content = clean_markdown(markdown_content, max_chars=12000)
 
             prompt = f"""Extract job posting details from the following page content.
 This is a specific job listing page (not a career portal with multiple jobs).
@@ -89,9 +63,11 @@ Rules:
 Page content:
 {markdown_content}"""
 
-            from src.services.llm_utils import call_llm
-
-            raw = call_llm([{"role": "user", "content": prompt}])
+            raw = await acall_llm(
+                [{"role": "user", "content": prompt}],
+                model=EXTRACTION_MODEL,
+                max_tokens=4096,
+            )
             if raw.startswith("```"):
                 raw = re.sub(r"^```(?:json)?\n|\n```$", "", raw)
 

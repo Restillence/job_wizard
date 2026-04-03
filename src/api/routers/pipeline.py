@@ -12,6 +12,7 @@ from src.services.embeddings import (
     json_to_embedding,
     generate_resume_embedding,
     embedding_to_json,
+    generate_job_embedding,
 )
 from src.models import Job, Resume, User, CompanySize
 from src.services.job_sources import search_all
@@ -191,6 +192,15 @@ def _upsert_board_jobs(
                 last_seen_at=now,
             )
             db.add(new_job)
+            if new_job.description:
+                emb = generate_job_embedding(
+                    title=new_job.title,
+                    description=new_job.description,
+                    requirements={},
+                    tags=new_job.tags,
+                )
+                if emb:
+                    new_job.embedding = embedding_to_json(emb)
             newly_added += 1
             jobs_list.append(new_job)
 

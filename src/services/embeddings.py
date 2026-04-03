@@ -27,7 +27,11 @@ def generate_embedding(text: str) -> Optional[List[float]]:
 
 
 def generate_job_embedding(
-    title: str, description: str, requirements: dict
+    title: str,
+    description: str,
+    requirements: dict,
+    benefits: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
 ) -> Optional[List[float]]:
     combined_text = f"""
     Title: {title}
@@ -35,6 +39,10 @@ def generate_job_embedding(
     Description: {description}
     
     Requirements: {json.dumps(requirements)}
+    
+    Benefits: {json.dumps(benefits) if benefits else "Not specified"}
+    
+    Tags: {", ".join(tags) if tags else ""}
     """
     return generate_embedding(combined_text)
 
