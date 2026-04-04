@@ -638,17 +638,9 @@ Companies:
             ]
             query = query.filter(or_(*industry_filters))
 
-        if keywords:
-            keyword_filters = [
-                or_(
-                    CompanyModel.name.ilike(f"%{kw}%"),
-                    CompanyModel.industry.ilike(f"%{kw}%"),
-                    CompanyModel.city.ilike(f"%{kw}%"),
-                    CompanyModel.url.ilike(f"%{kw}%"),
-                )
-                for kw in keywords
-            ]
-            query = query.filter(or_(*keyword_filters))
+        # We DO NOT filter companies by 'keywords' (e.g. Python, FastAPI) 
+        # as companies don't generally have these in their name/industry fields.
+        # Keywords are purely used for the external web search/discovery step.
 
         if company_size:
             query = query.filter(CompanyModel.company_size == company_size)

@@ -1,0 +1,61 @@
+{
+  "companies": [
+    {
+      "id": "0b1fce6c-eafe-4705-ae4c-cd46c60c4a13",
+      "name": "Mock Berlin Startup 0",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-0.com/careers",
+      "url_verified": true
+    },
+    {
+      "id": "5bada845-f795-42da-b0a0-2802b838168b",
+      "name": "Mock Berlin Startup 1",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-1.com/careers",
+      "url_verified": true
+    },
+    {
+      "id": "0111b35d-5d8f-4be6-8d4b-5418af307209",
+      "name": "Mock Berlin Startup 2",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-2.com/careers",
+      "url_verified": true
+    },
+    {
+      "id": "42f4a8ed-33fe-40a7-9c32-f349f762886f",
+      "name": "Mock Berlin Startup 3",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-3.com/careers",
+      "url_verified": true
+    },
+    {
+      "id": "7671013b-08ed-44d4-ab29-cefb659ddbe7",
+      "name": "Mock Berlin Startup 4",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-4.com/careers",
+      "url_verified": true
+    },
+    {
+      "id": "3456524a-275b-4938-989f-ef5d5ab87677",
+      "name": "Mock Berlin Startup 5",
+      "city": "Berlin",
+      "industry": "Software",
+      "company_size": "startup",
+      "url": "https://mock-5.com/careers",
+      "url_verified": true
+    }
+  ],
+  "total_found": 6,
+  "newly_added": 0,
+  "source": "local"
+}

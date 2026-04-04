@@ -138,6 +138,11 @@ python -c "from src.database import engine; from src.models import Base; Base.me
 - **Root cause:** No retry cap — same failing prompt retried with identical results.
 - **Rule:** Max 3 retries per subtask. If still failing, rewrite the prompt (simplify, rephrase, split into smaller steps). Never retry the same prompt more than 3 times.
 
+### RESEARCH-001: Model API strings and versions change often
+- **What:** Fallback to `gemini-3.1-flash-lite` returned a 404 Not Found error because the Google API technically requires a `-preview` suffix for the current version.
+- **Root cause:** Guessing API model strings without verifying the latest documentation.
+- **Rule:** ALWAYS perform a web search to verify exact API strings, model versions, and endpoint dependencies for integrations rather than guessing.
+
 ---
 
 ## Anti-Cheat Rules

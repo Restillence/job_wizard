@@ -23,7 +23,7 @@ def _extract_content(response) -> str:
 def call_llm(
     messages: list,
     *,
-    model: str = "gemini/gemini-3-flash",
+    model: str = "gemini/gemini-2.0-flash",
     timeout: int = 120,
     max_tokens: int = 4096,
 ) -> str:
@@ -33,7 +33,7 @@ def call_llm(
         messages=messages,
         timeout=timeout,
         max_tokens=max_tokens,
-        fallbacks=["gemini/gemini-3.1-flash-lite"],
+        fallbacks=["gemini/gemini-3.1-flash-lite-preview"],
     )
     return _extract_content(response)
 
@@ -41,7 +41,7 @@ def call_llm(
 async def acall_llm(
     messages: list,
     *,
-    model: str = "gemini/gemini-3-flash",
+    model: str = "gemini/gemini-2.0-flash",
     timeout: int = 120,
     max_tokens: int = 4096,
 ) -> str:
@@ -51,7 +51,7 @@ async def acall_llm(
         messages=messages,
         timeout=timeout,
         max_tokens=max_tokens,
-        fallbacks=["gemini/gemini-3.1-flash-lite"],
+        fallbacks=["gemini/gemini-3.1-flash-lite-preview"],
     )
     return _extract_content(response)
 

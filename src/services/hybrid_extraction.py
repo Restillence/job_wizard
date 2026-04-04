@@ -21,7 +21,7 @@ from src.services.crawl_utils import JOB_CRAWL_CONFIG, clean_markdown
 from src.services.embeddings import generate_job_embedding, embedding_to_json
 from src.services.llm_utils import acall_llm
 
-EXTRACTION_MODEL = "gemini/gemini-3-flash"
+EXTRACTION_MODEL = "gemini/gemini-2.0-flash"
 
 EXTRACTION_FIELD_INSTRUCTIONS = """
 Extract ALL of the following fields:

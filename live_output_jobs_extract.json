@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "company_id": "0b1fce6c-eafe-4705-ae4c-cd46c60c4a13",
+      "company_name": "Mock Berlin Startup 0",
+      "jobs": [],
+      "newly_added": 0,
+      "updated": 0
+    }
+  ],
+  "total_extracted": 0,
+  "total_new": 0,
+  "total_updated": 0
+}
