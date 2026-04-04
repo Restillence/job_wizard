@@ -1,9 +1,8 @@
 import json
 import re
-from typing import Optional
 from pydantic import BaseModel
 from src.services.llm_utils import call_llm
-from src.services.cv_parser import ParsedCV, CVSection
+from src.services.cv_parser import ParsedCV
 
 
 class TailoredSection(BaseModel):

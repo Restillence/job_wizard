@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 import numpy as np
-from litellm import embedding
+from src.services.llm_utils import call_embedding as embedding
 from src.config import settings
 
 GEMINI_EMBEDDING_MODEL = "gemini/gemini-embedding-001"

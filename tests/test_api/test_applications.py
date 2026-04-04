@@ -1,6 +1,6 @@
 import uuid
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tests.conftest import TestingSessionLocal, create_test_company
 from src.models import Job, Resume, Application, ApplicationStatus
 from src.services.cv_parser import ParsedCV, CVSection

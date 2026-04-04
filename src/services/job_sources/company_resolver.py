@@ -1,5 +1,4 @@
-import hashlib
-from typing import Optional, Tuple
+from typing import Tuple
 from sqlalchemy.orm import Session
 from src.models import Company
 from src.services.job_sources.base import NormalizedJob

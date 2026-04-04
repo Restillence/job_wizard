@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from src.services.job_sources import get_sources, search_all
 from src.services.job_sources.base import BaseJobSource, NormalizedJob, SearchParams
 

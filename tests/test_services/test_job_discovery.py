@@ -98,7 +98,7 @@ async def test_discover_companies_with_exclusions(
     mock_acall_llm.side_effect = [names_json, urls_json]
 
     service = JobDiscoveryService()
-    result = await service.discover_companies(
+    _result = await service.discover_companies(
         cities=["Munich"],
         exclude_companies=["TestCorp", "AnotherCorp"],
     )

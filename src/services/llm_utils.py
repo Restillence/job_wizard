@@ -1,5 +1,5 @@
 import re
-from litellm import completion, acompletion
+from litellm import completion, acompletion, embedding
 from src.config import settings
 
 
@@ -54,3 +54,7 @@ async def acall_llm(
         max_tokens=max_tokens,
     )
     return _extract_content(response)
+
+
+def call_embedding(*args, **kwargs):
+    return embedding(*args, **kwargs)

@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 from src.services.job_sources.arbeitsagentur import ArbeitsagenturSource
 from src.services.job_sources.base import SearchParams

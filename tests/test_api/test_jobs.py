@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch
 from src.services.job_discovery import Company
 from src.services.hybrid_extraction import ScrapedJobs, JobOpening
 

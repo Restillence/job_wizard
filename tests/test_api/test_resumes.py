@@ -1,6 +1,6 @@
 import os
 import io
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from docx import Document as DocxDocument
 
 
@@ -40,7 +40,7 @@ def test_upload_txt_resume(client):
 
 
 def test_upload_pdf_resume(client):
-    buf = io.BytesIO()
+    _buf = io.BytesIO()
     doc = DocxDocument()
     doc.add_paragraph("Jane Doe - Software Engineer")
     doc.add_paragraph("Python, Docker, Kubernetes")

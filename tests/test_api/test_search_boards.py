@@ -1,6 +1,5 @@
-import uuid
 from unittest.mock import patch, MagicMock
-from tests.conftest import TestingSessionLocal, create_test_company
+from tests.conftest import TestingSessionLocal
 from src.models import Job
 from src.services.job_sources.base import NormalizedJob
 

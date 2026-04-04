@@ -1,11 +1,9 @@
 import json
 import re
 import asyncio
-import concurrent.futures
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from duckduckgo_search import DDGS
-from litellm import completion, acompletion
 import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -75,7 +73,7 @@ class JobDiscoveryService:
                 exclusion_text = f" EXCLUDE: {', '.join(exclude_companies[:20])}"
                 search_query = query + exclusion_text
 
-            print(f"\n--- DEBUG: EXACT TAVILY SEARCH QUERY ---")
+            print("\n--- DEBUG: EXACT TAVILY SEARCH QUERY ---")
             print(search_query)
             print("----------------------------------------\n")
 
@@ -120,7 +118,7 @@ class JobDiscoveryService:
                 exclusion_text = f" -{' -'.join(exclude_companies[:10])}"
                 search_query = query + exclusion_text
 
-            print(f"\n--- DEBUG: EXACT SERPER SEARCH QUERY ---")
+            print("\n--- DEBUG: EXACT SERPER SEARCH QUERY ---")
             print(search_query)
             print("----------------------------------------\n")
 
@@ -399,8 +397,8 @@ Search Results:
 """
 
         try:
-            print(f"--- DEBUG: SENDING TO LLM TO EXTRACT NAMES ---")
-            print(f"\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (EXTRACT NAMES) ---")
+            print("--- DEBUG: SENDING TO LLM TO EXTRACT NAMES ---")
+            print("\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (EXTRACT NAMES) ---")
             print(prompt)
             print("--------------------------------------------------------------\n")
             raw_json = await acall_llm([{"role": "user", "content": prompt}])
@@ -475,8 +473,8 @@ Companies:
 """
 
         try:
-            print(f"--- DEBUG: SENDING TO LLM TO PREDICT URLS ---")
-            print(f"\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (PREDICT URLS) ---")
+            print("--- DEBUG: SENDING TO LLM TO PREDICT URLS ---")
+            print("\n--- DEBUG: EXACT SYSTEM/USER PROMPT TO LLM (PREDICT URLS) ---")
             print(prompt)
             print("-------------------------------------------------------------\n")
             raw_json = await acall_llm([{"role": "user", "content": prompt}])

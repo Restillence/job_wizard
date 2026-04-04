@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 from src.services.job_sources.arbeitnow import ArbeitnowSource
 from src.services.job_sources.base import NormalizedJob, SearchParams

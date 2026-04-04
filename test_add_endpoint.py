@@ -259,7 +259,7 @@ def test_07_verify_db_state(client: httpx.Client, first_result: dict | None):
         return
 
     job_id = first_result.get("job_id")
-    company_id = first_result.get("company_id")
+    _company_id = first_result.get("company_id")
 
     r = client.get(f"{BASE_URL}/api/v1/jobs/", timeout=10)
     if r.status_code == 200:
@@ -354,7 +354,7 @@ def main():
             print(f"  WARNING: Server returned {r.status_code} on /docs")
     except httpx.ConnectError:
         print("  ERROR: Cannot connect to server. Is it running?")
-        print(f"  Start it with: python -m uvicorn src.main:app --reload --port 8000")
+        print("  Start it with: python -m uvicorn src.main:app --reload --port 8000")
         sys.exit(1)
 
     print("  --- Test 1: Empty payload ---")

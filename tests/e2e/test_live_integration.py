@@ -225,11 +225,10 @@ class TestLiveCoverLetterGeneration:
         """Test generating a cover letter with real LLM."""
         from src.services.cv_generator import CVGeneratorService
         from src.services.cv_parser import ParsedCV, CVSection
-        from unittest.mock import MagicMock
 
         service = CVGeneratorService()
 
-        resume_text = """
+        _resume_text = """
         John Doe
         Software Engineer with 6 years of experience in Python, FastAPI, and PostgreSQL.
         Previously worked at TechStartup building REST APIs.

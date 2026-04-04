@@ -1,5 +1,4 @@
 import json
-import re
 from typing import Optional
 from pydantic import BaseModel
 from src.services.llm_utils import call_llm
