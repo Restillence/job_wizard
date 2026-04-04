@@ -21,7 +21,7 @@ from src.services.crawl_utils import JOB_CRAWL_CONFIG, clean_markdown
 from src.services.embeddings import generate_job_embedding, embedding_to_json
 from src.services.llm_utils import acall_llm
 
-EXTRACTION_MODEL = "gemini/gemini-2.0-flash"
+EXTRACTION_MODEL = "gemini/gemini-3-flash-preview"
 
 EXTRACTION_FIELD_INSTRUCTIONS = """
 Extract ALL of the following fields:
@@ -94,7 +94,7 @@ class HybridExtractionService:
                 return ats_name
         return None
 
-    def _extract_personio_jobs(self, url: str) -> ScrapedJobs:
+    async def _extract_personio_jobs(self, url: str) -> ScrapedJobs:
         try:
             company_id_match = re.search(r"personio\.(?:de|com)/([^/]+)", url)
             if not company_id_match:
@@ -103,8 +103,8 @@ class HybridExtractionService:
             company_slug = company_id_match.group(1)
             api_url = f"https://{company_slug}.jobs.personio.de/api/v1/search-jobs"
 
-            with httpx.Client(timeout=15) as client:
-                response = client.get(api_url)
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(api_url)
                 if response.status_code != 200:
                     return ScrapedJobs(jobs=[])
 
@@ -125,7 +125,7 @@ class HybridExtractionService:
             print(f"Personio extraction failed: {e}")
             return ScrapedJobs(jobs=[])
 
-    def _extract_greenhouse_jobs(self, url: str) -> ScrapedJobs:
+    async def _extract_greenhouse_jobs(self, url: str) -> ScrapedJobs:
         try:
             board_token_match = re.search(r"greenhouse\.io/([^/]+)", url)
             if not board_token_match:
@@ -134,8 +134,8 @@ class HybridExtractionService:
             board_token = board_token_match.group(1).split(".")[0]
             api_url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs"
 
-            with httpx.Client(timeout=15) as client:
-                response = client.get(api_url)
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(api_url)
                 if response.status_code != 200:
                     return ScrapedJobs(jobs=[])
 
@@ -156,7 +156,7 @@ class HybridExtractionService:
             print(f"Greenhouse extraction failed: {e}")
             return ScrapedJobs(jobs=[])
 
-    def _extract_workday_jobs(self, url: str) -> ScrapedJobs:
+    async def _extract_workday_jobs(self, url: str) -> ScrapedJobs:
         try:
             if "myworkdayjobs.com" not in url:
                 return ScrapedJobs(jobs=[])
@@ -164,8 +164,8 @@ class HybridExtractionService:
             base_url = url.rstrip("/")
             api_url = f"{base_url}/wfp/career/careersection/alljobs/search"
 
-            with httpx.Client(timeout=15) as client:
-                response = client.get(api_url)
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(api_url)
                 if response.status_code != 200:
                     return ScrapedJobs(jobs=[])
 
@@ -372,11 +372,11 @@ class HybridExtractionService:
         ats_type = self.check_ats_footprint(url)
 
         if ats_type == "personio":
-            return self._extract_personio_jobs(url)
+            return await self._extract_personio_jobs(url)
         elif ats_type == "greenhouse":
-            return self._extract_greenhouse_jobs(url)
+            return await self._extract_greenhouse_jobs(url)
         elif ats_type == "workday":
-            return self._extract_workday_jobs(url)
+            return await self._extract_workday_jobs(url)
         else:
             try:
                 return await self._crawl4ai_fallback(url)
@@ -501,8 +501,8 @@ class HybridExtractionService:
         target_cities: Optional[List[str]] = None,
     ) -> ExtractionResult:
         scraped_jobs = await self.scrape_jobs(company.url)
-        jobs, newly_added, updated = self.upsert_jobs(
-            db, company, scraped_jobs, target_cities
+        jobs, newly_added, updated = await asyncio.to_thread(
+            self.upsert_jobs, db, company, scraped_jobs, target_cities
         )
 
         return ExtractionResult(

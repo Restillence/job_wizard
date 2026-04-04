@@ -28,7 +28,7 @@ AGGREGATOR_DOMAINS = [
 MAX_CITIES = 5
 MAX_INDUSTRIES = 5
 MAX_KEYWORDS = 10
-MAX_COMPANY_NAMES = 50
+MAX_COMPANY_NAMES = 20
 
 
 class Company(BaseModel):
@@ -360,7 +360,7 @@ class JobDiscoveryService:
 
         # We keep the context for each search result
         search_context = []
-        for r in search_results[:30]:
+        for r in search_results[:12]:
             search_context.append(
                 {
                     "title": r.get("title"),

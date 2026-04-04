@@ -16,14 +16,21 @@ def generate_embedding(text: str) -> Optional[List[float]]:
         raise ValueError("GEMINI_API_KEY is required for embedding generation")
 
     try:
-        response = embedding(
-            model=GEMINI_EMBEDDING_MODEL,
-            input=text[:8000],
-            api_key=settings.GEMINI_API_KEY,
-        )
-        return list(response.data[0]["embedding"])
+        from tenacity import retry, wait_random_exponential, stop_after_attempt
+        
+        @retry(wait=wait_random_exponential(multiplier=1, max=20), stop=stop_after_attempt(3), reraise=True)
+        def _execute_embedding(t: str) -> List[float]:
+            resp = embedding(
+                model=GEMINI_EMBEDDING_MODEL,
+                input=t[:8000],
+                api_key=settings.GEMINI_API_KEY,
+            )
+            return list(resp.data[0]["embedding"])
+            
+        return _execute_embedding(text)
     except Exception as e:
-        raise RuntimeError(f"Failed to generate embedding: {e}")
+        print(f"Failed to generate embedding after retries: {e}")
+        return None
 
 
 def generate_job_embedding(

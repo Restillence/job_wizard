@@ -16,6 +16,12 @@ JOB_CRAWL_CONFIG = CrawlerRunConfig(
     only_text=True,
     exclude_external_links=True,
     exclude_social_media_links=True,
+    js_code="""
+        window.scrollTo(0, document.body.scrollHeight);
+        await new Promise(r => setTimeout(r, 2000));
+        window.scrollTo(0, 0);
+    """,
+    delay_before_return_html=2.0,
 )
 
 _NOISE_PATTERNS = re.compile(
