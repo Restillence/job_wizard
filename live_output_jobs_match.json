@@ -1,0 +1,77 @@
+{
+  "matched_jobs": [
+    {
+      "job_id": "fb6b1934-ac94-4643-a664-ae85ebdb9352",
+      "title": "Lead Backend Developer - BundesMessenger (m/w/d)",
+      "company_name": "BWI GmbH",
+      "company_id": "b68feab4-fc1e-4c4a-b06f-ecaabc8acd82",
+      "similarity_score": 0.702,
+      "is_new_match": true
+    },
+    {
+      "job_id": "62f444c0-962e-4d13-8eb2-f6c3e052e7dd",
+      "title": "Senior Full Stack Developer",
+      "company_name": "neuraflow GmbH",
+      "company_id": "9cdc0435-9666-4cc7-ac90-f4ed2a2b0d84",
+      "similarity_score": 0.6928,
+      "is_new_match": true
+    },
+    {
+      "job_id": "eb7c9069-0cbb-48ae-baaa-1813bd2ad329",
+      "title": "Frontend Developer (m/w/d)",
+      "company_name": "secunet Security Networks AG",
+      "company_id": "a12ad5ba-ecaa-477e-af2a-5dfb1100feb7",
+      "similarity_score": 0.6727,
+      "is_new_match": true
+    },
+    {
+      "job_id": "c44422a7-cb2e-4169-8cda-267e4e5695bf",
+      "title": "Senior Cloud Infrastructure Engineer",
+      "company_name": "Gradle Technologies",
+      "company_id": "318fed34-3ecf-46dc-8452-77ae9335c8a8",
+      "similarity_score": 0.6698,
+      "is_new_match": true
+    },
+    {
+      "job_id": "8ce1f635-62ee-4125-a459-d801916ad4ef",
+      "title": "Senior Java Backend Engineer (m/f/x)",
+      "company_name": "Atolls",
+      "company_id": "aedd5b4c-aa65-4c60-afe4-fc07486c49d4",
+      "similarity_score": 0.66,
+      "is_new_match": true
+    },
+    {
+      "job_id": "2f95d420-099e-4030-9a38-55cff63f9768",
+      "title": "Senior Backend Engineer (TypeScript, NestJS/Node.js) (m/f/x)",
+      "company_name": "Atolls",
+      "company_id": "aedd5b4c-aa65-4c60-afe4-fc07486c49d4",
+      "similarity_score": 0.6572,
+      "is_new_match": true
+    },
+    {
+      "job_id": "d930e6ac-2eb6-4ffb-ab82-44087fd5f0b0",
+      "title": "Senior IT System Engineer (all genders)",
+      "company_name": "Urban Sports Club",
+      "company_id": "1a9db358-2919-4d3f-97b1-5e20059ae076",
+      "similarity_score": 0.6522,
+      "is_new_match": true
+    },
+    {
+      "job_id": "4e4c8c3d-ee24-40aa-a61d-fb5f685dd585",
+      "title": "Senior Engineering Manager",
+      "company_name": "Gradle Technologies",
+      "company_id": "318fed34-3ecf-46dc-8452-77ae9335c8a8",
+      "similarity_score": 0.6406,
+      "is_new_match": true
+    },
+    {
+      "job_id": "a3d7aa14-dfb3-47e9-aa23-e5cae982bef8",
+      "title": "Senior Android Developer (m/f/x)",
+      "company_name": "Atolls",
+      "company_id": "aedd5b4c-aa65-4c60-afe4-fc07486c49d4",
+      "similarity_score": 0.6178,
+      "is_new_match": true
+    }
+  ],
+  "total_matches": 9
+}

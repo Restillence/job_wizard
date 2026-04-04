@@ -1,0 +1,106 @@
+{
+  "jobs": [
+    {
+      "id": "fb6b1934-ac94-4643-a664-ae85ebdb9352",
+      "title": "Lead Backend Developer - BundesMessenger (m/w/d)",
+      "company_name": "BWI GmbH",
+      "source_url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/13509-000021103da001-S",
+      "source": "arbeitsagentur",
+      "location_city": "Berlin",
+      "location_country": "Deutschland",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "eb7c9069-0cbb-48ae-baaa-1813bd2ad329",
+      "title": "Frontend Developer (m/w/d)",
+      "company_name": "secunet Security Networks AG",
+      "source_url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/19410-2141397-S",
+      "source": "arbeitsagentur",
+      "location_city": "Berlin",
+      "location_country": "Deutschland",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "62f444c0-962e-4d13-8eb2-f6c3e052e7dd",
+      "title": "Senior Full Stack Developer",
+      "company_name": "neuraflow GmbH",
+      "source_url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-1202580228-S",
+      "source": "arbeitsagentur",
+      "location_city": "Berlin",
+      "location_country": "Deutschland",
+      "remote": true,
+      "is_new": true
+    },
+    {
+      "id": "8ce1f635-62ee-4125-a459-d801916ad4ef",
+      "title": "Senior Java Backend Engineer (m/f/x)",
+      "company_name": "Atolls",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/atolls/senior-java-backend-engineer-berlin-459329",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "2f95d420-099e-4030-9a38-55cff63f9768",
+      "title": "Senior Backend Engineer (TypeScript, NestJS/Node.js) (m/f/x)",
+      "company_name": "Atolls",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/atolls/senior-backend-engineer-typescript-nestjs-nodejs-berlin-91508",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "d930e6ac-2eb6-4ffb-ab82-44087fd5f0b0",
+      "title": "Senior IT System Engineer (all genders)",
+      "company_name": "Urban Sports Club",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/urban-sports-club/senior-it-system-engineer-all-genders-berlin-437483",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "c44422a7-cb2e-4169-8cda-267e4e5695bf",
+      "title": "Senior Cloud Infrastructure Engineer",
+      "company_name": "Gradle Technologies",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/gradle-technologies/senior-cloud-infrastructure-engineer-berlin-254336",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "4e4c8c3d-ee24-40aa-a61d-fb5f685dd585",
+      "title": "Senior Engineering Manager",
+      "company_name": "Gradle Technologies",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/gradle-technologies/senior-engineering-manager-berlin-300070",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    },
+    {
+      "id": "a3d7aa14-dfb3-47e9-aa23-e5cae982bef8",
+      "title": "Senior Android Developer (m/f/x)",
+      "company_name": "Atolls",
+      "source_url": "https://www.arbeitnow.com/jobs/companies/atolls/senior-android-developer-berlin-66172",
+      "source": "arbeitnow",
+      "location_city": "Berlin, Berlin, Germany",
+      "location_country": "",
+      "remote": false,
+      "is_new": true
+    }
+  ],
+  "total_found": 9,
+  "newly_added": 9,
+  "updated": 0
+}

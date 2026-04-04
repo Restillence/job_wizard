@@ -1,4 +1,12 @@
-import os
+"""
+MVP Live Evaluation — Arbeitsagentur + Arbeitnow Pipeline
+Tests the actual MVP endpoints with real API data:
+  1. POST /jobs/search-boards  (Arbeitsagentur + Arbeitnow)
+  2. POST /resumes/upload
+  3. POST /jobs/match
+  4. POST /pipeline/search-and-match
+Writes JSON output files for each endpoint.
+"""
 import io
 import time
 import json
@@ -8,129 +16,137 @@ from docx import Document
 from src.database import engine, SessionLocal
 from src.models import Base, User
 
-# Reset DB and initialize test user to bypass rate limit
+# ── Fresh DB ──────────────────────────────────────────────────────
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 try:
-    if not db.query(User).filter(User.id == "test_user_id").first():
-        db.add(User(
-            id="test_user_id", 
-            email="live@test.com", 
-            hashed_password="pwd", 
-            is_superuser=True
-        ))
-        db.commit()
+    db.add(User(
+        id="test_user_id",
+        email="live@test.com",
+        hashed_password="pwd",
+        is_superuser=True,
+    ))
+    db.commit()
+    print("[SEED] Created test user")
 finally:
     db.close()
 
 BASE_URL = "http://127.0.0.1:8000"
 
+
 def write_out(name, data):
     with open(f"live_output_{name}.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"[OK] Saved {name}")
+    print(f"  [OK] Saved live_output_{name}.json")
 
-def seed_db():
-    from src.database import SessionLocal
-    from src.models import Company
-    import uuid
-    db = SessionLocal()
-    if db.query(Company).count() < 5:
-        print("Seeding DB to bypass 503 Discovery fallback")
-        for i in range(6):
-            c = Company(
-                id=str(uuid.uuid4()),
-                name=f"Mock Berlin Startup {i}",
-                city="Berlin",
-                industry="Software",
-                company_size="startup",
-                url=f"https://mock-{i}.com/careers",
-                url_verified=True
-            )
-            db.add(c)
-        db.commit()
-    db.close()
 
 def run():
-    seed_db()
     with httpx.Client(timeout=120) as client:
-        print("1. Testing /api/v1/companies/search")
-        params = {
-            "cities": ["Berlin"],
-            "industries": ["Software"],
-            "company_size": "startup"
+        # ── 1. Search Job Boards (Arbeitsagentur + Arbeitnow) ────
+        print("\n═══ 1. POST /api/v1/jobs/search-boards ═══")
+        search_payload = {
+            "query": "Python Developer",
+            "city": "Berlin",
+            "country": "DE",
+            "keywords": ["Python", "FastAPI"],
+            "page": 1,
+            "per_page": 10,
         }
-        r = client.get(f"{BASE_URL}/api/v1/companies/search", params=params)
+        r = client.post(f"{BASE_URL}/api/v1/jobs/search-boards",
+                        json=search_payload)
+        print(f"  Status: {r.status_code}")
         try:
-            out_companies = r.json()
-            write_out("companies_search", out_companies)
-        except:
-            print("ERROR response:", r.text)
+            out_boards = r.json()
+            write_out("search_boards", out_boards)
+            total = out_boards.get("total_found", 0)
+            new = out_boards.get("newly_added", 0)
+            print(f"  Found {total} jobs, {new} newly added")
+
+            # Show first 3 jobs
+            for j in out_boards.get("jobs", [])[:3]:
+                print(f"    → {j['title']} @ {j['company_name']} ({j['source']})")
+        except Exception as e:
+            print(f"  [ERROR] {e} / body: {r.text[:300]}")
             return
-            
-        time.sleep(12)
-        
-        companies = out_companies.get("companies", [])
-        if not companies:
-            print("[FAIL] No companies found!")
-            return
-            
-        c_id = companies[0]["id"]
-        print(f"2. Testing /api/v1/companies/{c_id}/resolve-url")
-        r = client.get(f"{BASE_URL}/api/v1/companies/{c_id}/resolve-url")
-        write_out("resolve_url", r.json())
-        
-        print("3. Testing /api/v1/jobs/extract")
-        r = client.post(f"{BASE_URL}/api/v1/jobs/extract", json={"company_ids": [c_id]})
-        out_jobs = r.json()
-        write_out("jobs_extract", out_jobs)
-        
-        jobs = out_jobs.get("jobs", [])
-        if not jobs:
-            print("[FAIL] No jobs extracted!")
-            # we keep going for the rest
-            
-        print("4. Testing /api/v1/resumes/upload")
+
+        time.sleep(2)
+
+        # ── 2. Resume Upload ──────────────────────────────────────
+        print("\n═══ 2. POST /api/v1/resumes/upload ═══")
         doc = Document()
         doc.add_paragraph("Max Mustermann")
-        doc.add_paragraph("Software Engineer from Berlin. Expert in Python and FastAPI. 6 years experience.")
+        doc.add_paragraph(
+            "Senior Software Engineer aus München. "
+            "Experte in Python, FastAPI, und Cloud-Infrastruktur. "
+            "6 Jahre Erfahrung in agilen Teams. "
+            "Schwerpunkte: Microservices, CI/CD, Kubernetes, PostgreSQL. "
+            "Erfahrung mit Machine Learning und Datenanalyse."
+        )
         buf = io.BytesIO()
         doc.save(buf)
-        
+
         files = {
-            "file": ("resume.docx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            "file": ("lebenslauf.docx", buf.getvalue(),
+                     "application/vnd.openxmlformats-officedocument"
+                     ".wordprocessingml.document")
         }
         r = client.post(f"{BASE_URL}/api/v1/resumes/upload", files=files)
-        out_upload = r.json()
-        write_out("uploads", out_upload)
-        
-        print(f"5. Testing /api/v1/jobs/match ... Using user_id: test_user_id and company_id: {c_id}")
-        r = client.post(f"{BASE_URL}/api/v1/jobs/match", json={"user_id": "test_user_id", "company_ids": [c_id], "top_k": 5})
-        write_out("match", r.json())
-        
-        print("6. Testing /api/v1/pipeline/search-and-match")
+        print(f"  Status: {r.status_code}")
+        write_out("resume_upload", r.json())
+
+        time.sleep(2)
+
+        # ── 3. Job Matching ───────────────────────────────────────
+        print("\n═══ 3. POST /api/v1/jobs/match ═══")
+        r = client.post(f"{BASE_URL}/api/v1/jobs/match",
+                        json={"user_id": "test_user_id", "top_k": 10})
+        print(f"  Status: {r.status_code}")
+        out_match = r.json()
+        write_out("jobs_match", out_match)
+        matches = out_match.get("matched_jobs", [])
+        print(f"  {len(matches)} matched jobs")
+        for m in matches[:3]:
+            print(f"    → {m['title']} @ {m['company_name']} "
+                  f"(score: {m['similarity_score']})")
+
+        time.sleep(2)
+
+        # ── 4. Full Pipeline (board search + match, NO deep_search) ──
+        print("\n═══ 4. POST /api/v1/pipeline/search-and-match ═══")
         pipeline_payload = {
-            "cities": ["Munich"],
-            "industries": ["B2B SaaS"],
-            "keywords": ["Engineer"],
-            "company_size": "startup",
+            "cities": ["München"],
+            "keywords": ["Backend", "Python"],
             "user_id": "test_user_id",
-            "top_k": 5
+            "top_k": 10,
+            "deep_search": False,
         }
-        r = client.post(f"{BASE_URL}/api/v1/pipeline/search-and-match", json=pipeline_payload)
-        write_out("pipeline", r.json())
-        
-        print("[DONE] Live Evaluation Suite Complete!")
+        r = client.post(f"{BASE_URL}/api/v1/pipeline/search-and-match",
+                        json=pipeline_payload)
+        print(f"  Status: {r.status_code}")
+        out_pipe = r.json()
+        write_out("pipeline", out_pipe)
+        print(f"  Board jobs found: {out_pipe.get('board_jobs_found', 0)}")
+        print(f"  Board jobs new: {out_pipe.get('board_jobs_new', 0)}")
+        for m in out_pipe.get("matched_jobs", [])[:3]:
+            print(f"    → {m['title']} @ {m['company_name']} "
+                  f"(score: {m['similarity_score']})")
+
+        print("\n════════════════════════════════════════")
+        print("[DONE] MVP Live Evaluation Complete!")
+        print("════════════════════════════════════════")
+
 
 if __name__ == "__main__":
     import threading
     import uvicorn
     from src.main import app
+
     def start_server():
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
+        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+
     t = threading.Thread(target=start_server, daemon=True)
     t.start()
-    time.sleep(3)
+    time.sleep(4)
     run()

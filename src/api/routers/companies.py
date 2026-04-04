@@ -101,7 +101,7 @@ async def search_companies(
     )
 
 
-@router.post("/{company_id}/resolve-url", response_model=ResolveUrlResponse)
+@router.get("/{company_id}/resolve-url", response_model=ResolveUrlResponse)
 async def resolve_company_url(
     company_id: str,
     db: Session = Depends(get_db),

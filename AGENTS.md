@@ -260,12 +260,36 @@ Human-in-the-loop. Status → `Approved`.
 ### `POST /api/v1/resumes/upload`
 PDF/Docx → strip PII → generate embedding → save.
 
-### `POST /api/v1/pipeline/search-and-match`
-One-shot discovery + matching. **Body:** `{ "cities", "industries", "keywords", "company_size", "user_id", "top_k": 20 }`. Flow: `/companies/search` → `/jobs/extract` → `/jobs/match` → save search to history (max 5).
+### `POST /api/v1/jobs/search-boards` ⭐ MVP PRIMARY
+**Body:** `{ "query": "Python Developer", "city": "Berlin", "country": "DE", "keywords": ["Python", "FastAPI"] }`. Queries Arbeitsagentur + Arbeitnow APIs directly. Auto-creates companies, deduplicates, generates embeddings.
+
+**Response:** `{ "jobs": [...], "total_found": N, "newly_added": N, "updated": N }`
+
+### `POST /api/v1/pipeline/search-and-match` ⭐ MVP PRIMARY
+One-shot board search + matching. **Body:** `{ "cities", "keywords", "user_id", "top_k": 20, "deep_search": false }`. Flow: Arbeitsagentur + Arbeitnow → upsert → cosine match. Set `deep_search: true` for post-MVP company discovery.
 
 ---
 
-## Self-Building Discovery Logic
+> [!IMPORTANT]
+> ## MVP Scope — What Is In / What Is Out
+>
+> **IN (MVP):**
+> - `POST /jobs/search-boards` — Arbeitsagentur + Arbeitnow API search
+> - `POST /jobs/add` — Manual URL/text job submission
+> - `POST /jobs/match` — Resume ↔ job vector matching
+> - `POST /resumes/upload` — Resume parsing + embedding
+> - `POST /pipeline/search-and-match` — One-shot board search + match (`deep_search=false`)
+>
+> **OUT (Post-MVP):**
+> - `GET /companies/search` — Self-building company discovery (DuckDuckGo/Tavily/LLM)
+> - `GET /companies/{id}/resolve-url` — Lazy career URL resolution
+> - `POST /jobs/discover` — LLM-driven company discovery
+> - `POST /jobs/extract` — Crawl4AI career page scraping
+> - `POST /pipeline/search-and-match` with `deep_search=true`
+>
+> **Rationale:** Company discovery uses web search + LLM which burns Gemini rate limits (5 RPM free tier). The Arbeitsagentur/Arbeitnow APIs are free, fast, and don't require LLM calls for basic job search.
+
+## Self-Building Discovery Logic (POST-MVP)
 
 ```
 THRESHOLDS:
