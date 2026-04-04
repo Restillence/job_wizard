@@ -32,8 +32,6 @@ class Settings(BaseSettings):
 
     def validate_required_keys(self) -> list[str]:
         missing = []
-        if not self.ZAI_API_KEY:
-            missing.append("ZAI_API_KEY")
         if not self.GEMINI_API_KEY:
             missing.append("GEMINI_API_KEY")
         return missing

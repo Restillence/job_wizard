@@ -23,17 +23,17 @@ def _extract_content(response) -> str:
 def call_llm(
     messages: list,
     *,
-    model: str = "openai/glm-5.1",
+    model: str = "gemini/gemini-3-flash",
     timeout: int = 120,
     max_tokens: int = 4096,
 ) -> str:
     response = completion(
         model=model,
-        api_base=settings.ZAI_API_BASE,
-        api_key=settings.ZAI_API_KEY,
+        api_key=settings.GEMINI_API_KEY,
         messages=messages,
         timeout=timeout,
         max_tokens=max_tokens,
+        fallbacks=["gemini/gemini-3.1-flash-lite"],
     )
     return _extract_content(response)
 
@@ -41,17 +41,17 @@ def call_llm(
 async def acall_llm(
     messages: list,
     *,
-    model: str = "openai/glm-5.1",
+    model: str = "gemini/gemini-3-flash",
     timeout: int = 120,
     max_tokens: int = 4096,
 ) -> str:
     response = await acompletion(
         model=model,
-        api_base=settings.ZAI_API_BASE,
-        api_key=settings.ZAI_API_KEY,
+        api_key=settings.GEMINI_API_KEY,
         messages=messages,
         timeout=timeout,
         max_tokens=max_tokens,
+        fallbacks=["gemini/gemini-3.1-flash-lite"],
     )
     return _extract_content(response)
 
