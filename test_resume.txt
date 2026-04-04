@@ -1,0 +1,25 @@
+Max Mustermann
+Software Entwickler
+Berlin, Deutschland
+max.mustermann@example.com
+
+PROFESSIONAL EXPERIENCE:
+
+Senior Python Developer - TechCorp GmbH, Berlin (2022-present)
+- Developed backend services with Python and FastAPI
+- Designed and implemented REST APIs for financial applications
+- Led team of 4 developers in migrating legacy systems to microservices
+
+Junior Developer - StartupXYZ, Munich (2019-2022)
+- Built data pipelines using Python and Apache Airflow
+- Implemented CI/CD pipelines with GitHub Actions
+- Developed customer-facing dashboard with React and TypeScript
+
+EDUCATION:
+B.Sc. Informatik - Technische Universitaet Muenchen (2015-2019)
+
+SKILLS:
+Python, FastAPI, Django, PostgreSQL, Docker, Kubernetes, AWS, Git, TypeScript, React
+
+LANGUAGES:
+Deutsch (Muttersprache), Englisch (C1), Franzoesisch (B1)

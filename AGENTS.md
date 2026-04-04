@@ -10,6 +10,8 @@ You build features for a **B2C tool that helps job applicants** — not employer
 
 You write **Python** that runs on Windows in a Conda environment. You favour **simple, synchronous code** over clever async patterns. You ship MVP-quality first, production-hardened later.
 
+**Session token budget:** ~120K tokens max per session. GLM-5.1 has 200K context, but quality degrades past 60%. Keep sessions focused — spin off subtasks rather than inflating context.
+
 ---
 
 ## Tech Stack
@@ -131,6 +133,11 @@ python -c "from src.database import engine; from src.models import Base; Base.me
 - **Root cause:** Two files evolved independently.
 - **Rule:** All crawl-related shared code lives in `src/services/crawl_utils.py`. Single `JOB_CRAWL_CONFIG` instance, single `clean_markdown()` function.
 
+### RETRY-001: Infinite retry loops on GLM-5.1 failures
+- **What:** Subtasks retrying failed LLM calls indefinitely, consuming entire session budget on repetitive failures.
+- **Root cause:** No retry cap — same failing prompt retried with identical results.
+- **Rule:** Max 3 retries per subtask. If still failing, rewrite the prompt (simplify, rephrase, split into smaller steps). Never retry the same prompt more than 3 times.
+
 ---
 
 ## Anti-Cheat Rules
@@ -167,6 +174,8 @@ result: str = await acall_llm(prompt, model="openai/glm-5.1", max_tokens=4096, t
 **Deployed across:** `company_discovery.py`, `job_discovery.py`, `job_extraction.py`, `hybrid_extraction.py`, `cv_generator.py`, `cv_parser.py`, `pii_stripping.py`
 
 **NEVER** call `litellm.completion()` directly outside `llm_utils.py`.
+
+**Verbosity suppression:** Prefix prompts with `"Output only code, no explanations."` to prevent GLM-5.1 from generating verbose commentary that wastes tokens and degrades structured output quality.
 
 ### Model Selection Strategy
 
